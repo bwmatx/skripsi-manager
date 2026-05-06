@@ -27,7 +27,9 @@ class AccountPage extends ConsumerWidget {
               final account = await AccountRepository().getAccount();
               if (!context.mounted) return;
               await Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => EditAccountPage(account: account)),
+                MaterialPageRoute(
+                  builder: (_) => EditAccountPage(account: account),
+                ),
               );
               ref.invalidate(accountProvider);
             },
@@ -68,10 +70,17 @@ class _AccountBodyState extends State<_AccountBody> {
       _reminderMinute = picked.minute;
     });
     if (_reminderEnabled) {
-      await NotificationService.scheduleDailyReminder(hour: _reminderHour, minute: _reminderMinute);
+      await NotificationService.scheduleDailyReminder(
+        hour: _reminderHour,
+        minute: _reminderMinute,
+      );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Pengingat dijadwalkan pukul ${picked.format(context)}')),
+        SnackBar(
+          content: Text(
+            'Pengingat dijadwalkan pukul ${picked.format(context)}',
+          ),
+        ),
       );
     }
   }
@@ -79,7 +88,10 @@ class _AccountBodyState extends State<_AccountBody> {
   Future<void> _toggleReminder(bool val) async {
     setState(() => _reminderEnabled = val);
     if (val) {
-      await NotificationService.scheduleDailyReminder(hour: _reminderHour, minute: _reminderMinute);
+      await NotificationService.scheduleDailyReminder(
+        hour: _reminderHour,
+        minute: _reminderMinute,
+      );
     } else {
       await NotificationService.cancelAll();
     }
@@ -93,27 +105,47 @@ class _AccountBodyState extends State<_AccountBody> {
         // Profile card
         Container(
           padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(color: AppTheme.card, borderRadius: BorderRadius.circular(16)),
+          decoration: BoxDecoration(
+            color: AppTheme.card,
+            borderRadius: BorderRadius.circular(16),
+          ),
           child: Column(
             children: [
               CircleAvatar(
                 radius: 36,
                 backgroundColor: AppTheme.primary.withAlpha(40),
                 child: Text(
-                  widget.account.name.isNotEmpty ? widget.account.name[0].toUpperCase() : '?',
-                  style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w700, color: AppTheme.primary),
+                  widget.account.name.isNotEmpty
+                      ? widget.account.name[0].toUpperCase()
+                      : '?',
+                  style: const TextStyle(
+                    fontSize: 28,
+                    fontWeight: FontWeight.w700,
+                    color: AppTheme.primary,
+                  ),
                 ),
               ),
               const SizedBox(height: 12),
               Text(
-                widget.account.name.isNotEmpty ? widget.account.name : 'Nama belum diisi',
-                style: const TextStyle(color: AppTheme.textPrimary, fontSize: 18, fontWeight: FontWeight.w600),
+                widget.account.name.isNotEmpty
+                    ? widget.account.name
+                    : 'Nama belum diisi',
+                style: const TextStyle(
+                  color: AppTheme.textPrimary,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
               const SizedBox(height: 4),
               Text(
-                widget.account.thesisTitle.isNotEmpty ? widget.account.thesisTitle : 'Judul skripsi belum diisi',
+                widget.account.thesisTitle.isNotEmpty
+                    ? widget.account.thesisTitle
+                    : 'Judul skripsi belum diisi',
                 textAlign: TextAlign.center,
-                style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+                style: const TextStyle(
+                  color: AppTheme.textSecondary,
+                  fontSize: 13,
+                ),
               ),
             ],
           ),
@@ -132,49 +164,93 @@ class _AccountBodyState extends State<_AccountBody> {
           ),
           child: Row(
             children: [
-              const Icon(Icons.local_fire_department_rounded, color: Colors.white, size: 40),
+              const Icon(
+                Icons.local_fire_department_rounded,
+                color: Colors.white,
+                size: 40,
+              ),
               const SizedBox(width: 16),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
                     '${widget.account.currentStreak} Hari',
-                    style: const TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.w800),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 26,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
-                  const Text('Streak Aktif', style: TextStyle(color: Colors.white70, fontSize: 13)),
+                  const Text(
+                    'Streak Aktif',
+                    style: TextStyle(color: Colors.white70, fontSize: 13),
+                  ),
                 ],
               ),
             ],
           ),
         ),
         const SizedBox(height: 16),
-        _InfoCard(label: 'Tanggal Lahir', value: widget.account.dateOfBirth.isNotEmpty ? widget.account.dateOfBirth : '-'),
+        _InfoCard(
+          label: 'Tanggal Lahir',
+          value: widget.account.dateOfBirth.isNotEmpty
+              ? widget.account.dateOfBirth
+              : '-',
+        ),
         const SizedBox(height: 8),
         _InfoCard(
           label: 'Aktivitas Terakhir',
-          value: widget.account.lastActivityDate.isNotEmpty ? _formatDate(widget.account.lastActivityDate) : '-',
+          value: widget.account.lastActivityDate.isNotEmpty
+              ? _formatDate(widget.account.lastActivityDate)
+              : '-',
         ),
         const SizedBox(height: 24),
 
         // ─── Reminder Section ───────────────────────────────────────────
         const Padding(
           padding: EdgeInsets.only(bottom: 10),
-          child: Text('PENGINGAT', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.8, color: AppTheme.textSecondary)),
+          child: Text(
+            'PENGINGAT',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.8,
+              color: AppTheme.textSecondary,
+            ),
+          ),
         ),
         Container(
-          decoration: BoxDecoration(color: AppTheme.card, borderRadius: BorderRadius.circular(16)),
+          decoration: BoxDecoration(
+            color: AppTheme.card,
+            borderRadius: BorderRadius.circular(16),
+          ),
           child: Column(
             children: [
               ListTile(
                 leading: Container(
                   padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(color: AppTheme.primary.withAlpha(30), borderRadius: BorderRadius.circular(10)),
-                  child: const Icon(Icons.alarm_rounded, color: AppTheme.primary),
+                  decoration: BoxDecoration(
+                    color: AppTheme.primary.withAlpha(30),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(
+                    Icons.alarm_rounded,
+                    color: AppTheme.primary,
+                  ),
                 ),
-                title: const Text('Pengingat Harian', style: TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.w600)),
+                title: const Text(
+                  'Pengingat Harian',
+                  style: TextStyle(
+                    color: AppTheme.textPrimary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
                 subtitle: Text(
                   'Setiap hari pukul ${_reminderHour.toString().padLeft(2, '0')}:${_reminderMinute.toString().padLeft(2, '0')}',
-                  style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+                  style: const TextStyle(
+                    color: AppTheme.textSecondary,
+                    fontSize: 13,
+                  ),
                 ),
                 trailing: Switch(
                   value: _reminderEnabled,
@@ -185,9 +261,18 @@ class _AccountBodyState extends State<_AccountBody> {
               ),
               const Divider(height: 1),
               ListTile(
-                leading: const Icon(Icons.schedule_rounded, color: AppTheme.textSecondary),
-                title: const Text('Atur Waktu Pengingat', style: TextStyle(color: AppTheme.textSecondary, fontSize: 14)),
-                trailing: const Icon(Icons.chevron_right_rounded, color: AppTheme.textSecondary),
+                leading: const Icon(
+                  Icons.schedule_rounded,
+                  color: AppTheme.textSecondary,
+                ),
+                title: const Text(
+                  'Atur Waktu Pengingat',
+                  style: TextStyle(color: AppTheme.textSecondary, fontSize: 14),
+                ),
+                trailing: const Icon(
+                  Icons.chevron_right_rounded,
+                  color: AppTheme.textSecondary,
+                ),
                 onTap: _pickTime,
               ),
             ],
@@ -197,24 +282,39 @@ class _AccountBodyState extends State<_AccountBody> {
 
         // Change PIN
         OutlinedButton.icon(
-          onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ChangePinPage())),
+          onPressed: () => Navigator.of(
+            context,
+          ).push(MaterialPageRoute(builder: (_) => const ChangePinPage())),
           icon: const Icon(Icons.lock_outline_rounded),
           label: const Text('Ganti PIN'),
           style: OutlinedButton.styleFrom(
             foregroundColor: AppTheme.textPrimary,
             side: const BorderSide(color: AppTheme.divider),
             padding: const EdgeInsets.symmetric(vertical: 14),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
           ),
         ),
         const SizedBox(height: 32),
         const Padding(
           padding: EdgeInsets.only(bottom: 10),
-          child: Text('TENTANG APLIKASI', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.8, color: AppTheme.textSecondary)),
+          child: Text(
+            'TENTANG APLIKASI',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.8,
+              color: AppTheme.textSecondary,
+            ),
+          ),
         ),
         Container(
           padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(color: AppTheme.card, borderRadius: BorderRadius.circular(16)),
+          decoration: BoxDecoration(
+            color: AppTheme.card,
+            borderRadius: BorderRadius.circular(16),
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -222,15 +322,35 @@ class _AccountBodyState extends State<_AccountBody> {
                 children: [
                   Container(
                     padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(color: AppTheme.primary.withAlpha(30), borderRadius: BorderRadius.circular(8)),
-                    child: const Icon(Icons.info_outline_rounded, color: AppTheme.primary, size: 20),
+                    decoration: BoxDecoration(
+                      color: AppTheme.primary.withAlpha(30),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(
+                      Icons.info_outline_rounded,
+                      color: AppTheme.primary,
+                      size: 20,
+                    ),
                   ),
                   const SizedBox(width: 12),
                   const Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Skripsi Manager', style: TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.w600, fontSize: 16)),
-                      Text('Version 1.1.0', style: TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
+                      Text(
+                        'Skripsi Manager',
+                        style: TextStyle(
+                          color: AppTheme.textPrimary,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 16,
+                        ),
+                      ),
+                      Text(
+                        'Version 1.1.2',
+                        style: TextStyle(
+                          color: AppTheme.textSecondary,
+                          fontSize: 13,
+                        ),
+                      ),
                     ],
                   ),
                 ],
@@ -242,16 +362,42 @@ class _AccountBodyState extends State<_AccountBody> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: const [
-                  Text('Developer', style: TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
-                  Text('Adhi Wibowo', style: TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.w500, fontSize: 13)),
+                  Text(
+                    'Developer',
+                    style: TextStyle(
+                      color: AppTheme.textSecondary,
+                      fontSize: 13,
+                    ),
+                  ),
+                  Text(
+                    'Adhi Wibowo',
+                    style: TextStyle(
+                      color: AppTheme.textPrimary,
+                      fontWeight: FontWeight.w500,
+                      fontSize: 13,
+                    ),
+                  ),
                 ],
               ),
               const SizedBox(height: 8),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: const [
-                  Text('Build Type', style: TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
-                  Text('Release', style: TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.w500, fontSize: 13)),
+                  Text(
+                    'Build Type',
+                    style: TextStyle(
+                      color: AppTheme.textSecondary,
+                      fontSize: 13,
+                    ),
+                  ),
+                  Text(
+                    'Stable Release',
+                    style: TextStyle(
+                      color: AppTheme.textPrimary,
+                      fontWeight: FontWeight.w500,
+                      fontSize: 13,
+                    ),
+                  ),
                 ],
               ),
             ],
@@ -288,8 +434,17 @@ class _InfoCard extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
-          Text(value, style: const TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.w500)),
+          Text(
+            label,
+            style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+          ),
+          Text(
+            value,
+            style: const TextStyle(
+              color: AppTheme.textPrimary,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
         ],
       ),
     );
@@ -330,13 +485,15 @@ class _EditAccountPageState extends State<EditAccountPage> {
 
   Future<void> _save() async {
     setState(() => _saving = true);
-    await AccountRepository().saveAccount(AccountModel(
-      name: _name.text.trim(),
-      dateOfBirth: _dob.text.trim(),
-      thesisTitle: _thesis.text.trim(),
-      currentStreak: widget.account.currentStreak,
-      lastActivityDate: widget.account.lastActivityDate,
-    ));
+    await AccountRepository().saveAccount(
+      AccountModel(
+        name: _name.text.trim(),
+        dateOfBirth: _dob.text.trim(),
+        thesisTitle: _thesis.text.trim(),
+        currentStreak: widget.account.currentStreak,
+        lastActivityDate: widget.account.lastActivityDate,
+      ),
+    );
     if (!mounted) return;
     Navigator.of(context).pop();
   }
@@ -348,11 +505,16 @@ class _EditAccountPageState extends State<EditAccountPage> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          TextField(controller: _name, decoration: const InputDecoration(labelText: 'Nama')),
+          TextField(
+            controller: _name,
+            decoration: const InputDecoration(labelText: 'Nama'),
+          ),
           const SizedBox(height: 16),
           TextField(
             controller: _dob,
-            decoration: const InputDecoration(labelText: 'Tanggal Lahir (dd/mm/yyyy)'),
+            decoration: const InputDecoration(
+              labelText: 'Tanggal Lahir (dd/mm/yyyy)',
+            ),
             keyboardType: TextInputType.datetime,
           ),
           const SizedBox(height: 16),
@@ -364,7 +526,13 @@ class _EditAccountPageState extends State<EditAccountPage> {
           const SizedBox(height: 24),
           ElevatedButton(
             onPressed: _saving ? null : _save,
-            child: _saving ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)) : const Text('Simpan'),
+            child: _saving
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text('Simpan'),
           ),
         ],
       ),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:skripsi_manager/core/theme.dart';
+import 'package:skripsi_manager/features/ai/data/ai_chat_repository.dart';
 import 'package:skripsi_manager/features/ai/data/search_controller.dart' as ai;
 import 'package:skripsi_manager/features/ai/domain/journal_model.dart';
 import 'package:skripsi_manager/features/ai/data/gemini_service.dart';
@@ -118,7 +119,7 @@ class _AiPageState extends State<AiPage> {
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
                   child: Column(
                     children: [
-                      // File selector — popup bottom sheet
+                      // File selector
                       if (_availableFiles.isNotEmpty)
                         GestureDetector(
                           onTap: () async {
@@ -263,7 +264,7 @@ class _AiPageState extends State<AiPage> {
   }
 }
 
-// ---------- Stat chip ----------
+// ─── Stat chip ────────────────────────────────────────────────────────────────
 
 class _StatChip extends StatelessWidget {
   final IconData icon;
@@ -290,7 +291,7 @@ class _StatChip extends StatelessWidget {
   }
 }
 
-// ---------- Result card ----------
+// ─── Result card ──────────────────────────────────────────────────────────────
 
 class ResultCard extends StatefulWidget {
   final JournalItem item;
@@ -301,9 +302,181 @@ class ResultCard extends StatefulWidget {
 }
 
 class _ResultCardState extends State<ResultCard> {
-  String? aiResponse;
-  bool isLoading = false;
-  final GeminiService _gemini = GeminiService();
+  final _gemini = GeminiService();
+  final _repo = AiChatRepository();
+  final _followUpCtrl = TextEditingController();
+
+  List<AiChatMessage> _messages = [];
+  bool _loadingHistory = true;
+  bool _sendingMsg = false;
+
+  /// Unique key per journal item used as DB identifier.
+  String get _itemKey {
+    final base = '${widget.item.chapter}_${widget.item.paragraphIndex}_'
+        '${widget.item.title.hashCode.abs()}';
+    return base;
+  }
+
+  bool get _hasMessages => _messages.isNotEmpty;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadHistory();
+  }
+
+  @override
+  void dispose() {
+    _followUpCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadHistory() async {
+    try {
+      final msgs = await _repo.getMessages(_itemKey);
+      if (mounted) setState(() { _messages = msgs; _loadingHistory = false; });
+    } catch (_) {
+      if (mounted) setState(() => _loadingHistory = false);
+    }
+  }
+
+  /// Initial "Tanyakan ke AI" — first message in this conversation.
+  Future<void> _askAi() async {
+    if (_sendingMsg) return;
+    setState(() => _sendingMsg = true);
+
+    final chunks = _gemini.chunkText(widget.item.text);
+    final textToSend = chunks.take(2).join(' ');
+
+    // Persona diinjeksi otomatis oleh GeminiService/OpenRouterService.
+    // Di sini cukup kirim konteks akademik yang relevan.
+    final prompt =
+        'Analisis kutipan jurnal ilmiah berikut dan jelaskan maknanya '
+        'secara akademis, termasuk relevansinya untuk penelitian:\n\n'
+        '"$textToSend"';
+
+    final response = await _gemini.sendPromptWithFallback(prompt);
+
+    if (!mounted) return;
+
+    // Persist first assistant message
+    final msg = AiChatMessage(
+      itemKey: _itemKey,
+      role: 'assistant',
+      content: response,
+      createdAt: DateTime.now(),
+    );
+    final id = await _repo.addMessage(msg);
+    setState(() {
+      _messages = [AiChatMessage(
+        id: id,
+        itemKey: msg.itemKey,
+        role: msg.role,
+        content: msg.content,
+        createdAt: msg.createdAt,
+      )];
+      _sendingMsg = false;
+    });
+  }
+
+  /// Follow-up question from user.
+  Future<void> _sendFollowUp() async {
+    final question = _followUpCtrl.text.trim();
+    if (question.isEmpty || _sendingMsg) return;
+
+    _followUpCtrl.clear();
+    setState(() => _sendingMsg = true);
+
+    // Save user message
+    final userMsg = AiChatMessage(
+      itemKey: _itemKey,
+      role: 'user',
+      content: question,
+      createdAt: DateTime.now(),
+    );
+    final userId = await _repo.addMessage(userMsg);
+
+    // Bangun konteks percakapan untuk follow-up
+    final contextBuf = StringBuffer();
+    contextBuf.writeln('Kutipan jurnal yang sedang dibahas:');
+    contextBuf.writeln('"${widget.item.text}"\n');
+    contextBuf.writeln('Riwayat diskusi:');
+    for (final m in _messages) {
+      final roleLabel = m.role == 'user' ? 'Mahasiswa' : 'Dosen Pembimbing';
+      contextBuf.writeln('$roleLabel: ${m.content}');
+    }
+    contextBuf.writeln('\nMahasiswa: $question');
+    contextBuf.writeln('\nBerikan jawaban sebagai dosen pembimbing akademik.');
+
+    if (mounted) {
+      setState(() {
+        _messages = [
+          ..._messages,
+          AiChatMessage(
+            id: userId,
+            itemKey: userMsg.itemKey,
+            role: 'user',
+            content: question,
+            createdAt: userMsg.createdAt,
+          ),
+        ];
+      });
+    }
+
+    final response = await _gemini.sendPromptWithFallback(contextBuf.toString());
+
+    if (!mounted) return;
+
+    final aiMsg = AiChatMessage(
+      itemKey: _itemKey,
+      role: 'assistant',
+      content: response,
+      createdAt: DateTime.now(),
+    );
+    final aiId = await _repo.addMessage(aiMsg);
+
+    setState(() {
+      _messages = [
+        ..._messages,
+        AiChatMessage(
+          id: aiId,
+          itemKey: aiMsg.itemKey,
+          role: 'assistant',
+          content: response,
+          createdAt: aiMsg.createdAt,
+        ),
+      ];
+      _sendingMsg = false;
+    });
+  }
+
+  Future<void> _deleteHistory() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.card,
+        title: const Text('Hapus Jawaban AI?', style: TextStyle(color: AppTheme.textPrimary, fontSize: 16)),
+        content: const Text(
+          'Seluruh riwayat percakapan AI untuk kutipan ini akan dihapus permanen.',
+          style: TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Batal'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.error),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Hapus'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    await _repo.deleteHistory(_itemKey);
+    if (mounted) setState(() => _messages = []);
+  }
 
   String get _locationLabel {
     final bab = 'BAB ${widget.item.chapter}';
@@ -312,31 +485,16 @@ class _ResultCardState extends State<ResultCard> {
     return '$bab$poin$para';
   }
 
-  void _askAi() async {
-    setState(() => isLoading = true);
-    final chunks = _gemini.chunkText(widget.item.text);
-    final textToSend = chunks.take(2).join(' ');
-    final response = await _gemini.sendPrompt(
-      'Kamu adalah asisten akademik. Jelaskan secara singkat, jelas, dan akademis maksud dari kutipan atau referensi jurnal berikut ini:\n\n$textToSend',
-    );
-    if (mounted) {
-      setState(() {
-        aiResponse = response;
-        isLoading = false;
-      });
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: Padding(
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Judul card
+            // ── Header ──
             Text(
               widget.item.title,
               maxLines: 2,
@@ -348,9 +506,8 @@ class _ResultCardState extends State<ResultCard> {
               ),
             ),
             const SizedBox(height: 6),
-            // Label lokasi
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
               decoration: BoxDecoration(
                 color: AppTheme.primary.withAlpha(18),
                 borderRadius: BorderRadius.circular(20),
@@ -367,64 +524,74 @@ class _ResultCardState extends State<ResultCard> {
             const SizedBox(height: 12),
             const Divider(height: 1),
             const SizedBox(height: 12),
-            // Teks kutipan
+
+            // ── Teks kutipan ──
             Text(
               widget.item.text,
               style: const TextStyle(fontSize: 13, color: AppTheme.textPrimary, height: 1.5),
             ),
             const SizedBox(height: 14),
-            // Respon AI / tombol
-            if (aiResponse != null) ...[
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: AppTheme.primary.withAlpha(10),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: AppTheme.primary.withAlpha(40)),
-                ),
+
+            // ── AI Section ──
+            if (_loadingHistory)
+              const SizedBox(
+                height: 24,
+                child: Center(child: LinearProgressIndicator()),
+              )
+            else if (_hasMessages) ...[
+              // Chat history
+              _ChatThread(messages: _messages),
+              const SizedBox(height: 4),
+
+              // Action row: copy first + delete
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  _IconActionBtn(
+                    icon: Icons.copy_rounded,
+                    label: 'Salin',
+                    onTap: () {
+                      final firstAi = _messages.firstWhere(
+                        (m) => m.role == 'assistant',
+                        orElse: () => _messages.first,
+                      );
+                      Clipboard.setData(ClipboardData(text: firstAi.content));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Jawaban disalin.')),
+                      );
+                    },
+                  ),
+                  const SizedBox(width: 8),
+                  _IconActionBtn(
+                    icon: Icons.delete_outline_rounded,
+                    label: 'Hapus',
+                    color: AppTheme.error,
+                    onTap: _deleteHistory,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+
+              // Follow-up input
+              _FollowUpInput(
+                controller: _followUpCtrl,
+                isSending: _sendingMsg,
+                onSend: _sendFollowUp,
+              ),
+            ] else if (_sendingMsg)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 10),
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Row(
-                          children: [
-                            Icon(Icons.auto_awesome, size: 14, color: AppTheme.primary),
-                            SizedBox(width: 6),
-                            Text(
-                              'Jawaban AI',
-                              style: TextStyle(
-                                fontWeight: FontWeight.w700,
-                                fontSize: 12,
-                                color: AppTheme.primary,
-                              ),
-                            ),
-                          ],
-                        ),
-                        IconButton(
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(),
-                          icon: const Icon(Icons.copy_rounded, size: 16, color: AppTheme.primary),
-                          onPressed: () {
-                            Clipboard.setData(ClipboardData(text: aiResponse!));
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Jawaban disalin.')),
-                            );
-                          },
-                        ),
-                      ],
+                    LinearProgressIndicator(),
+                    SizedBox(height: 6),
+                    Text(
+                      'AI sedang memproses...',
+                      style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                      textAlign: TextAlign.center,
                     ),
-                    const SizedBox(height: 8),
-                    Text(aiResponse!, style: const TextStyle(fontSize: 13, height: 1.5)),
                   ],
                 ),
-              ),
-            ] else if (isLoading)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 8),
-                child: Center(child: CircularProgressIndicator()),
               )
             else
               ElevatedButton.icon(
@@ -432,9 +599,180 @@ class _ResultCardState extends State<ResultCard> {
                 icon: const Icon(Icons.auto_awesome, size: 16),
                 label: const Text('Tanyakan ke AI'),
                 style: ElevatedButton.styleFrom(
-                  minimumSize: const Size(double.infinity, 42),
+                  minimumSize: const Size(double.infinity, 44),
                 ),
               ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Chat thread ──────────────────────────────────────────────────────────────
+
+class _ChatThread extends StatelessWidget {
+  final List<AiChatMessage> messages;
+  const _ChatThread({required this.messages});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: messages.map((m) {
+        final isAi = m.role == 'assistant';
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: Column(
+            crossAxisAlignment: isAi ? CrossAxisAlignment.start : CrossAxisAlignment.end,
+            children: [
+              // Role label
+              Padding(
+                padding: EdgeInsets.only(
+                  left: isAi ? 4 : 0,
+                  right: isAi ? 0 : 4,
+                  bottom: 4,
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (isAi) ...[
+                      const Icon(Icons.auto_awesome, size: 12, color: AppTheme.primary),
+                      const SizedBox(width: 4),
+                      const Text(
+                        'AI',
+                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppTheme.primary),
+                      ),
+                    ] else
+                      const Text(
+                        'Kamu',
+                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppTheme.textSecondary),
+                      ),
+                  ],
+                ),
+              ),
+              // Bubble
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: isAi
+                      ? AppTheme.primary.withAlpha(12)
+                      : AppTheme.card,
+                  borderRadius: BorderRadius.only(
+                    topLeft: const Radius.circular(12),
+                    topRight: const Radius.circular(12),
+                    bottomLeft: Radius.circular(isAi ? 0 : 12),
+                    bottomRight: Radius.circular(isAi ? 12 : 0),
+                  ),
+                  border: Border.all(
+                    color: isAi
+                        ? AppTheme.primary.withAlpha(40)
+                        : AppTheme.divider,
+                    width: 1,
+                  ),
+                ),
+                child: Text(
+                  m.content,
+                  style: TextStyle(
+                    fontSize: 13,
+                    height: 1.55,
+                    color: isAi ? AppTheme.textPrimary : AppTheme.textSecondary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      }).toList(),
+    );
+  }
+}
+
+// ─── Follow-up input ──────────────────────────────────────────────────────────
+
+class _FollowUpInput extends StatelessWidget {
+  final TextEditingController controller;
+  final bool isSending;
+  final VoidCallback onSend;
+
+  const _FollowUpInput({
+    required this.controller,
+    required this.isSending,
+    required this.onSend,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppTheme.card,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppTheme.divider),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              controller: controller,
+              enabled: !isSending,
+              maxLines: null,
+              style: const TextStyle(fontSize: 13),
+              decoration: const InputDecoration(
+                hintText: 'Tanya lanjutan...',
+                border: InputBorder.none,
+                isDense: true,
+                contentPadding: EdgeInsets.symmetric(vertical: 6),
+              ),
+              onSubmitted: (_) => onSend(),
+            ),
+          ),
+          const SizedBox(width: 6),
+          isSending
+              ? const SizedBox(
+                  width: 20, height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : IconButton(
+                  icon: const Icon(Icons.send_rounded, color: AppTheme.primary),
+                  onPressed: onSend,
+                  constraints: const BoxConstraints(),
+                  padding: const EdgeInsets.all(4),
+                ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Small icon action button ─────────────────────────────────────────────────
+
+class _IconActionBtn extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _IconActionBtn({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.color = AppTheme.primary,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 14, color: color),
+            const SizedBox(width: 4),
+            Text(label, style: TextStyle(fontSize: 12, color: color)),
           ],
         ),
       ),

@@ -1,7 +1,7 @@
 name: skripsi_manager
 description: "Skripsi Manager – Offline-first thesis management app"
 publish_to: 'none'
-version: 1.1.0+2
+version: 1.2.0+3
 
 environment:
   sdk: ^3.11.5
@@ -29,7 +29,7 @@ dependencies:
   # Secure local storage for PIN
   flutter_secure_storage: ^9.2.4
 
-  # HTTP for Gemini API
+  # HTTP for Gemini API + DeepSeek fallback
   http: ^1.4.0
 
   # DOCX parsing (ZIP + XML)
@@ -42,7 +42,11 @@ dependencies:
   # Connectivity check (offline detection)
   connectivity_plus: ^6.1.4
 
+  # ML Kit Translation (EN <-> ID, offline on-device)
+  google_mlkit_translation: ^0.12.0
+
   cupertino_icons: ^1.0.8
+  google_mlkit_language_id: ^0.13.1
 
 dev_dependencies:
   flutter_test:

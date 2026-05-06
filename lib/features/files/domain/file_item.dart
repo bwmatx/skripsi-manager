@@ -4,6 +4,7 @@ class FileItem {
   final String path;
   final int? chapterId;
   final String? type;
+  final String category;
 
   const FileItem({
     required this.id,
@@ -11,6 +12,7 @@ class FileItem {
     required this.path,
     this.chapterId,
     this.type,
+    this.category = 'Referensi',
   });
 
   factory FileItem.fromMap(Map<String, dynamic> m) => FileItem(
@@ -19,5 +21,6 @@ class FileItem {
         path: m['path'] as String,
         chapterId: m['chapter_id'] as int?,
         type: m['type'] as String?,
+        category: m['category'] as String? ?? 'Referensi',
       );
 }

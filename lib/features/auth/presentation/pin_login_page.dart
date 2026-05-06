@@ -37,9 +37,9 @@ class _PinLoginPageState extends State<PinLoginPage> {
     final saved = await _repo.getPin();
     if (_entered == saved) {
       if (!mounted) return;
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const MainShell()),
-      );
+      Navigator.of(
+        context,
+      ).pushReplacement(MaterialPageRoute(builder: (_) => const MainShell()));
     } else {
       HapticFeedback.mediumImpact();
       setState(() {
@@ -93,8 +93,8 @@ class _PinLoginPageState extends State<PinLoginPage> {
                       color: _error
                           ? AppTheme.error
                           : filled
-                              ? AppTheme.primary
-                              : AppTheme.divider,
+                          ? AppTheme.primary
+                          : AppTheme.divider,
                     ),
                   );
                 }),
@@ -107,17 +107,16 @@ class _PinLoginPageState extends State<PinLoginPage> {
               const SizedBox(height: 24),
               TextButton(
                 onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const ChangePinPage(isSetup: false)),
+                  MaterialPageRoute(
+                    builder: (_) => const ChangePinPage(isSetup: false),
+                  ),
                 ),
                 child: const Text('Lupa PIN?'),
               ),
               const Spacer(flex: 1),
               const Text(
-                'this app created by Adhi Wibowo\nversion 1.1.0 beta',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: AppTheme.textSecondary,
-                ),
+                'App created by Adhi Wibowo\nversion 1.1.2 stable release',
+                style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 16),
@@ -161,8 +160,11 @@ class _Numpad extends StatelessWidget {
                 ),
                 alignment: Alignment.center,
                 child: k == '<'
-                    ? const Icon(Icons.backspace_rounded,
-                        color: AppTheme.textSecondary, size: 20)
+                    ? const Icon(
+                        Icons.backspace_rounded,
+                        color: AppTheme.textSecondary,
+                        size: 20,
+                      )
                     : Text(
                         k,
                         style: const TextStyle(

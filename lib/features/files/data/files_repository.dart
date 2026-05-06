@@ -25,6 +25,11 @@ class FilesRepository {
     await db.delete('files', where: 'id = ?', whereArgs: [id]);
   }
 
+  Future<void> updateCategory(int id, String category) async {
+    final db = await AppDatabase.instance;
+    await db.update('files', {'category': category}, where: 'id = ?', whereArgs: [id]);
+  }
+
   String _detectType(String name) {
     final ext = name.split('.').last.toLowerCase();
     if (['pdf'].contains(ext)) return 'pdf';

@@ -8,6 +8,10 @@ final _pendingProvider = FutureProvider<int>((ref) async {
   return list.length;
 });
 
+final _exactAlarmProvider = FutureProvider<bool>((ref) async {
+  return NotificationService.hasExactAlarmPermission();
+});
+
 class NotificationsPage extends ConsumerStatefulWidget {
   const NotificationsPage({super.key});
 
@@ -55,12 +59,33 @@ class _NotificationsPageState extends ConsumerState<NotificationsPage> {
   @override
   Widget build(BuildContext context) {
     final pendingAsync = ref.watch(_pendingProvider);
+    final exactAlarmAsync = ref.watch(_exactAlarmProvider);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Pengingat')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          // Exact alarm permission warning
+          exactAlarmAsync.when(
+            data: (hasPermission) => hasPermission
+                ? const SizedBox.shrink()
+                : _WarningBanner(
+                    icon: Icons.warning_amber_rounded,
+                    text:
+                        'Izin alarm tepat waktu belum diberikan. Notifikasi mungkin terlambat.',
+                    color: const Color(0xFFF59E0B),
+                    actionLabel: 'Beri Izin',
+                    onAction: () async {
+                      await NotificationService.init();
+                      ref.invalidate(_exactAlarmProvider);
+                      ref.invalidate(_pendingProvider);
+                    },
+                  ),
+            loading: () => const SizedBox.shrink(),
+            error: (_, _) => const SizedBox.shrink(),
+          ),
+          const SizedBox(height: 8),
           // Active notifications badge
           pendingAsync.when(
             data: (count) => _InfoBanner(
@@ -131,7 +156,8 @@ class _NotificationsPageState extends ConsumerState<NotificationsPage> {
                 const Text(
                   '• Pengingat harian akan muncul setiap hari pada waktu yang ditentukan.\n'
                   '• Notifikasi deadline akan muncul 1 hari sebelum tenggat waktu.\n'
-                  '• Semua notifikasi berjalan secara offline.',
+                  '• Semua notifikasi berjalan secara offline.\n'
+                  '• Timezone otomatis disesuaikan dengan zona waktu perangkat.',
                   style: TextStyle(color: AppTheme.textSecondary, fontSize: 13, height: 1.6),
                 ),
               ],
@@ -163,6 +189,47 @@ class _InfoBanner extends StatelessWidget {
           Icon(icon, color: color, size: 18),
           const SizedBox(width: 10),
           Text(text, style: TextStyle(color: color, fontSize: 13)),
+        ],
+      ),
+    );
+  }
+}
+
+class _WarningBanner extends StatelessWidget {
+  final IconData icon;
+  final String text;
+  final Color color;
+  final String actionLabel;
+  final VoidCallback onAction;
+
+  const _WarningBanner({
+    required this.icon,
+    required this.text,
+    required this.color,
+    required this.actionLabel,
+    required this.onAction,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: color.withAlpha(25),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withAlpha(60)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: color, size: 18),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(text, style: TextStyle(color: color, fontSize: 13)),
+          ),
+          TextButton(
+            onPressed: onAction,
+            child: Text(actionLabel, style: TextStyle(color: color, fontSize: 12)),
+          ),
         ],
       ),
     );

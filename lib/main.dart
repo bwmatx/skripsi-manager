@@ -28,19 +28,22 @@ void main() async {
     statusBarIconBrightness: Brightness.light,
   ));
 
-  // Init DB and notifications without blocking startup — both wrapped safely
+  // Init DB — fire-and-forget (safe)
   unawaited(Future(() async {
     try {
       await AppDatabase.instance;
     } catch (e) {
       debugPrint('[DB] Init failed: $e');
     }
-    try {
-      await NotificationService.init();
-    } catch (e) {
-      debugPrint('[Notif] Init failed: $e');
-    }
   }));
+
+  // Init NotificationService — must complete before UI is interactive
+  // so timezone and channels are ready when user opens Pengingat page.
+  try {
+    await NotificationService.init();
+  } catch (e) {
+    debugPrint('[Notif] Init failed: $e');
+  }
 
   runApp(const ProviderScope(child: SkripsiApp()));
 }

@@ -11,7 +11,12 @@ class AppDatabase {
 
   static Future<Database> _init() async {
     final path = join(await getDatabasesPath(), 'skripsi_manager.db');
-    return openDatabase(path, version: 1, onCreate: _onCreate);
+    return openDatabase(
+      path,
+      version: 3,
+      onCreate: _onCreate,
+      onUpgrade: _onUpgrade,
+    );
   }
 
   static Future<void> _onCreate(Database db, int version) async {
@@ -40,7 +45,8 @@ class AppDatabase {
         name TEXT NOT NULL,
         path TEXT NOT NULL,
         chapter_id INTEGER,
-        type TEXT
+        type TEXT,
+        category TEXT DEFAULT 'Referensi'
       )
     ''');
 
@@ -62,6 +68,9 @@ class AppDatabase {
       )
     ''');
 
+    // AI chat history — persists AI answers and follow-up Q&A per journal item
+    await _createAiChatTable(db);
+
     // Default PIN
     await db.insert('settings', {'key': 'pin', 'value': '123123'});
 
@@ -80,4 +89,30 @@ class AppDatabase {
       'last_activity_date': '',
     });
   }
+
+  static Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      await _createAiChatTable(db);
+    }
+    if (oldVersion < 3) {
+      await db.execute('ALTER TABLE files ADD COLUMN category TEXT DEFAULT \'Referensi\'');
+    }
+  }
+
+  static Future<void> _createAiChatTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS ai_chat_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        item_key TEXT NOT NULL,
+        role TEXT NOT NULL,
+        content TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      )
+    ''');
+    // item_key = unique key per journal item (e.g. "bab1_para3_title_hash")
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_ai_chat_item ON ai_chat_history(item_key)',
+    );
+  }
 }
+

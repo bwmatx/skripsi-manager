@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:skripsi_manager/core/theme.dart';
 import 'package:skripsi_manager/features/ai/data/isolate_helpers.dart';
+import 'package:skripsi_manager/features/ai/data/translation_service.dart';
 import 'package:skripsi_manager/features/files/domain/file_item.dart';
 import 'package:skripsi_manager/features/files/presentation/files_page.dart';
 
@@ -48,6 +49,43 @@ class _ComparisonPageState extends ConsumerState<ComparisonPage> {
   CompareResult? _result;
   String? _errorMsg;
 
+  // Translation mode: EN <-> ID
+  bool _translateMode = false;
+  bool _modelsReady = false;
+  bool _modelsDownloading = false;
+  final TranslationService _translationService = TranslationService();
+
+  @override
+  void dispose() {
+    _translationService.dispose();
+    super.dispose();
+  }
+
+  Future<void> _checkAndDownloadModels() async {
+    if (_modelsReady) return;
+    setState(() {
+      _modelsDownloading = true;
+      _statusText = 'Memeriksa model terjemahan...';
+    });
+    final ok = await _translationService.ensureModelsReady(
+      onProgress: (msg) {
+        if (mounted) setState(() => _statusText = msg);
+      },
+    );
+    if (mounted) {
+      setState(() {
+        _modelsReady = ok;
+        _modelsDownloading = false;
+        _statusText = ok ? '' : 'Gagal mengunduh model terjemahan.';
+      });
+    }
+  }
+
+  Future<void> _toggleTranslateMode(bool val) async {
+    setState(() => _translateMode = val);
+    if (val && !_modelsReady) await _checkAndDownloadModels();
+  }
+
   Future<void> _compare() async {
     if (_sourceFile == null || _targetFile == null) return;
     setState(() {
@@ -63,22 +101,32 @@ class _ComparisonPageState extends ConsumerState<ComparisonPage> {
         _parseParagraphsInBackground(_sourceFile!.path),
         _parseParagraphsInBackground(_targetFile!.path),
       ]);
-      final source = futures[0];
-      final target = futures[1];
+      var source = futures[0];
+      var target = futures[1];
 
       if (source.isEmpty || target.isEmpty) {
         setState(() {
-          _errorMsg = 'Dokumen tidak dapat diparsing. Pastikan format file benar.';
+          _errorMsg =
+              'Dokumen tidak dapat diparsing. Pastikan format file benar.';
           _loading = false;
           _statusText = '';
         });
         return;
       }
 
+      // ── Translation mode: translate all paragraphs to English for cross-lang compare
+      if (_translateMode && _modelsReady) {
+        if (!mounted) return;
+        setState(() => _statusText = 'Menormalisasi dokumen sumber...');
+        source = await _translateParagraphs(source);
+
+        if (!mounted) return;
+        setState(() => _statusText = 'Menormalisasi dokumen pembanding...');
+        target = await _translateParagraphs(target);
+      }
+
       if (!mounted) return;
       setState(() => _statusText = 'Menganalisis file...');
-
-      // Short yield to let UI update before heavy compute
       await Future.delayed(const Duration(milliseconds: 30));
 
       if (!mounted) return;
@@ -89,16 +137,45 @@ class _ComparisonPageState extends ConsumerState<ComparisonPage> {
         ComparePayload(source: source, target: target),
       );
 
-      if (mounted) setState(() { _result = result; _loading = false; _statusText = ''; });
+      if (mounted) {
+        setState(() {
+          _result = result;
+          _loading = false;
+          _statusText = '';
+        });
+      }
     } catch (e) {
-      if (mounted) setState(() { _errorMsg = 'Error: $e'; _loading = false; _statusText = ''; });
+      if (mounted) {
+        setState(() {
+          _errorMsg = 'Error: $e';
+          _loading = false;
+          _statusText = '';
+        });
+      }
     }
+  }
+
+  /// Normalize a list of paragraphs to English using ML Kit.
+  /// Automatically detects language and only translates if it's Indonesian.
+  Future<List<String>> _translateParagraphs(List<String> paragraphs) async {
+    final translated = <String>[];
+    for (final para in paragraphs) {
+      try {
+        final result = await _translationService.normalizeToEnglish(para);
+        translated.add(result);
+      } catch (_) {
+        translated.add(para); // fallback to original
+      }
+    }
+    return translated;
   }
 
   Future<void> _pickFile({required bool isSource}) async {
     final filesAsync = ref.read(allFilesProvider);
     final files = filesAsync.valueOrNull ?? [];
-    final docFiles = files.where((f) => f.type == 'docx' || f.type == 'pdf').toList();
+    final docFiles = files
+        .where((f) => f.type == 'docx' || f.type == 'pdf')
+        .toList();
     if (!mounted) return;
     final picked = await FilePickerSheet.show(
       context,
@@ -108,7 +185,11 @@ class _ComparisonPageState extends ConsumerState<ComparisonPage> {
     );
     if (picked != null) {
       setState(() {
-        if (isSource) { _sourceFile = picked; } else { _targetFile = picked; }
+        if (isSource) {
+          _sourceFile = picked;
+        } else {
+          _targetFile = picked;
+        }
         _result = null;
       });
     }
@@ -124,13 +205,15 @@ class _ComparisonPageState extends ConsumerState<ComparisonPage> {
             IconButton(
               icon: const Icon(Icons.refresh_rounded),
               tooltip: 'Reset',
-              onPressed: _loading ? null : () => setState(() {
-                _sourceFile = null;
-                _targetFile = null;
-                _result = null;
-                _errorMsg = null;
-                _docCache.clear();
-              }),
+              onPressed: _loading
+                  ? null
+                  : () => setState(() {
+                      _sourceFile = null;
+                      _targetFile = null;
+                      _result = null;
+                      _errorMsg = null;
+                      _docCache.clear();
+                    }),
             ),
         ],
       ),
@@ -152,24 +235,106 @@ class _ComparisonPageState extends ConsumerState<ComparisonPage> {
               enabled: !_loading,
               onTap: () => _pickFile(isSource: false),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 12),
+
+            // ── Translation mode toggle ─────────────────────────────────────
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: AppTheme.card,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: _translateMode
+                      ? AppTheme.primary.withAlpha(80)
+                      : AppTheme.divider,
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.translate_rounded,
+                    color: _translateMode
+                        ? AppTheme.primary
+                        : AppTheme.textSecondary,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'ENG to ID',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: _translateMode
+                                ? AppTheme.primary
+                                : AppTheme.textPrimary,
+                          ),
+                        ),
+                        Text(
+                          _modelsDownloading
+                              ? _statusText.isNotEmpty
+                                    ? _statusText
+                                    : 'Mengunduh model...'
+                              : _modelsReady
+                              ? 'Model terjemahan siap (offline)'
+                              : 'Membutuhkan download model ~50MB',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: AppTheme.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (_modelsDownloading)
+                    const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  else
+                    Switch(
+                      value: _translateMode,
+                      onChanged: _loading ? null : _toggleTranslateMode,
+                      activeTrackColor: AppTheme.primary.withAlpha(100),
+                      activeThumbColor: AppTheme.primary,
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+
             // Compare button
             ElevatedButton.icon(
-              onPressed: (_sourceFile != null && _targetFile != null && !_loading) ? _compare : null,
+              onPressed:
+                  (_sourceFile != null &&
+                      _targetFile != null &&
+                      !_loading &&
+                      !_modelsDownloading)
+                  ? _compare
+                  : null,
               icon: _loading
                   ? const SizedBox(
-                      width: 18, height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
                     )
                   : const Icon(Icons.compare_arrows_rounded),
-              label: Text(_loading ? _statusText : 'Bandingkan Dokumen'),
-              style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 52)),
+              label: Text(
+                _loading ? _statusText : 'Bandingkan Dokumen',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              style: ElevatedButton.styleFrom(
+                minimumSize: const Size(double.infinity, 52),
+              ),
             ),
-            // Loading status
-            if (_loading) ...[
-              const SizedBox(height: 16),
-              _LoadingStatusCard(statusText: _statusText),
-            ],
             // Error message
             if (_errorMsg != null) ...[
               const SizedBox(height: 16),
@@ -182,40 +347,6 @@ class _ComparisonPageState extends ConsumerState<ComparisonPage> {
             ],
           ],
         ),
-      ),
-    );
-  }
-}
-
-// ─── Loading Status Card ──────────────────────────────────────────────────────
-
-class _LoadingStatusCard extends StatelessWidget {
-  final String statusText;
-  const _LoadingStatusCard({required this.statusText});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      decoration: BoxDecoration(
-        color: AppTheme.primary.withAlpha(12),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AppTheme.primary.withAlpha(40)),
-      ),
-      child: Row(
-        children: [
-          const SizedBox(
-            width: 16, height: 16,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              statusText,
-              style: const TextStyle(fontSize: 13, color: AppTheme.primary),
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -236,7 +367,10 @@ class _ErrorCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: AppTheme.error.withAlpha(60)),
       ),
-      child: Text(message, style: const TextStyle(color: AppTheme.error, fontSize: 13)),
+      child: Text(
+        message,
+        style: const TextStyle(color: AppTheme.error, fontSize: 13),
+      ),
     );
   }
 }
@@ -259,11 +393,11 @@ class _SelectorCard extends StatelessWidget {
       ? Icons.picture_as_pdf_rounded
       : Icons.description_rounded;
 
-  Color _iconColor(FileItem f) => f.type == 'pdf'
-      ? const Color(0xFFF87171)
-      : const Color(0xFF60A5FA);
+  Color _iconColor(FileItem f) =>
+      f.type == 'pdf' ? const Color(0xFFF87171) : const Color(0xFF60A5FA);
 
-  String _ext(FileItem f) => f.type?.toUpperCase() ?? f.path.split('.').last.toUpperCase();
+  String _ext(FileItem f) =>
+      f.type?.toUpperCase() ?? f.path.split('.').last.toUpperCase();
 
   String _fileSize(FileItem f) {
     try {
@@ -271,7 +405,9 @@ class _SelectorCard extends StatelessWidget {
       if (bytes < 1024) return '$bytes B';
       if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
       return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
-    } catch (_) { return '—'; }
+    } catch (_) {
+      return '—';
+    }
   }
 
   @override
@@ -294,7 +430,8 @@ class _SelectorCard extends StatelessWidget {
           child: Row(
             children: [
               Container(
-                width: 44, height: 44,
+                width: 44,
+                height: 44,
                 decoration: BoxDecoration(
                   color: hasFile
                       ? _iconColor(file!).withAlpha(25)
@@ -312,14 +449,24 @@ class _SelectorCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(label, style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
+                    Text(
+                      label,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: AppTheme.textSecondary,
+                      ),
+                    ),
                     const SizedBox(height: 3),
                     Text(
                       hasFile ? file!.name : 'Ketuk untuk memilih',
                       style: TextStyle(
                         fontSize: 14,
-                        fontWeight: hasFile ? FontWeight.w600 : FontWeight.normal,
-                        color: hasFile ? AppTheme.textPrimary : AppTheme.textSecondary,
+                        fontWeight: hasFile
+                            ? FontWeight.w600
+                            : FontWeight.normal,
+                        color: hasFile
+                            ? AppTheme.textPrimary
+                            : AppTheme.textSecondary,
                       ),
                       softWrap: true,
                       overflow: TextOverflow.visible,
@@ -329,7 +476,10 @@ class _SelectorCard extends StatelessWidget {
                       Row(
                         children: [
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 1,
+                            ),
                             decoration: BoxDecoration(
                               color: _iconColor(file!).withAlpha(25),
                               borderRadius: BorderRadius.circular(4),
@@ -344,15 +494,23 @@ class _SelectorCard extends StatelessWidget {
                             ),
                           ),
                           const SizedBox(width: 6),
-                          Text(_fileSize(file!),
-                              style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
+                          Text(
+                            _fileSize(file!),
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: AppTheme.textSecondary,
+                            ),
+                          ),
                         ],
                       ),
                     ],
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_right_rounded, color: AppTheme.textSecondary),
+              const Icon(
+                Icons.chevron_right_rounded,
+                color: AppTheme.textSecondary,
+              ),
             ],
           ),
         ),
@@ -394,23 +552,44 @@ class _ResultView extends StatelessWidget {
           ),
           child: Column(
             children: [
-              Text('$pct%',
-                  style: TextStyle(fontSize: 48, fontWeight: FontWeight.w800, color: _scoreColor)),
+              Text(
+                '$pct%',
+                style: TextStyle(
+                  fontSize: 48,
+                  fontWeight: FontWeight.w800,
+                  color: _scoreColor,
+                ),
+              ),
               const SizedBox(height: 4),
-              Text('Kemiripan Dokumen',
-                  style: TextStyle(fontSize: 13, color: _scoreColor.withAlpha(180))),
+              Text(
+                'Kemiripan Dokumen',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: _scoreColor.withAlpha(180),
+                ),
+              ),
               const SizedBox(height: 4),
-              Text(_verdict,
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: _scoreColor)),
+              Text(
+                _verdict,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: _scoreColor,
+                ),
+              ),
               const SizedBox(height: 12),
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  _ScoreBadge(label: '${result.matches.length} Mirip', color: _scoreColor),
+                  _ScoreBadge(
+                    label: '${result.matches.length} Mirip',
+                    color: _scoreColor,
+                  ),
                   const SizedBox(width: 8),
                   _ScoreBadge(
-                      label: '${result.unmatchedSource.length} Unik',
-                      color: AppTheme.textSecondary),
+                    label: '${result.unmatchedSource.length} Unik',
+                    color: AppTheme.textSecondary,
+                  ),
                 ],
               ),
             ],
@@ -432,7 +611,10 @@ class _ResultView extends StatelessWidget {
               padding: const EdgeInsets.only(top: 4, bottom: 8),
               child: Text(
                 '+ ${result.unmatchedSource.length - 5} paragraf lainnya',
-                style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: AppTheme.textSecondary,
+                ),
               ),
             ),
         ],
@@ -447,19 +629,31 @@ class _ScoreBadge extends StatelessWidget {
   const _ScoreBadge({required this.label, required this.color});
   @override
   Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-        decoration: BoxDecoration(color: color.withAlpha(20), borderRadius: BorderRadius.circular(20)),
-        child: Text(label, style: TextStyle(fontSize: 12, color: color, fontWeight: FontWeight.w600)),
-      );
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+    decoration: BoxDecoration(
+      color: color.withAlpha(20),
+      borderRadius: BorderRadius.circular(20),
+    ),
+    child: Text(
+      label,
+      style: TextStyle(fontSize: 12, color: color, fontWeight: FontWeight.w600),
+    ),
+  );
 }
 
 class _SectionHeader extends StatelessWidget {
   final String label;
   const _SectionHeader({required this.label});
   @override
-  Widget build(BuildContext context) => Text(label.toUpperCase(),
-      style: const TextStyle(
-          fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.8, color: AppTheme.textSecondary));
+  Widget build(BuildContext context) => Text(
+    label.toUpperCase(),
+    style: const TextStyle(
+      fontSize: 11,
+      fontWeight: FontWeight.w700,
+      letterSpacing: 0.8,
+      color: AppTheme.textSecondary,
+    ),
+  );
 }
 
 class _MatchCard extends StatelessWidget {
@@ -478,16 +672,30 @@ class _MatchCard extends StatelessWidget {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
               decoration: BoxDecoration(
-                  color: AppTheme.primary.withAlpha(20), borderRadius: BorderRadius.circular(8)),
-              child: Text('$pct% mirip',
-                  style: const TextStyle(
-                      fontSize: 11, color: AppTheme.primary, fontWeight: FontWeight.w700)),
+                color: AppTheme.primary.withAlpha(20),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                '$pct% mirip',
+                style: const TextStyle(
+                  fontSize: 11,
+                  color: AppTheme.primary,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
             ),
             const SizedBox(height: 10),
-            _TextBlock(label: 'Sumber', text: match.sourceText, bgColor: const Color(0xFFF0F9FF)),
+            _TextBlock(
+              label: 'Sumber',
+              text: match.sourceText,
+              bgColor: const Color(0xFFF0F9FF),
+            ),
             const SizedBox(height: 8),
             _TextBlock(
-                label: 'Pembanding', text: match.targetText, bgColor: const Color(0xFFF0FFF4)),
+              label: 'Pembanding',
+              text: match.targetText,
+              bgColor: const Color(0xFFF0FFF4),
+            ),
           ],
         ),
       ),
@@ -499,22 +707,40 @@ class _TextBlock extends StatelessWidget {
   final String label;
   final String text;
   final Color bgColor;
-  const _TextBlock({required this.label, required this.text, required this.bgColor});
+  const _TextBlock({
+    required this.label,
+    required this.text,
+    required this.bgColor,
+  });
   @override
   Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(color: bgColor, borderRadius: BorderRadius.circular(8)),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('$label:',
-                style: const TextStyle(
-                    fontSize: 10, fontWeight: FontWeight.w700, color: AppTheme.textSecondary)),
-            const SizedBox(height: 4),
-            Text(text, style: const TextStyle(fontSize: 13, height: 1.5)),
-          ],
+    width: double.infinity,
+    padding: const EdgeInsets.all(10),
+    decoration: BoxDecoration(
+      color: bgColor,
+      borderRadius: BorderRadius.circular(8),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '$label:',
+          style: const TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.w700,
+            color: AppTheme.textSecondary,
+          ),
         ),
-      );
+        const SizedBox(height: 4),
+        Text(
+          text,
+          style: const TextStyle(fontSize: 13, height: 1.5),
+          softWrap: true,
+          overflow: TextOverflow.visible,
+        ),
+      ],
+    ),
+  );
 }
 
 class _UnmatchedCard extends StatelessWidget {
@@ -522,11 +748,20 @@ class _UnmatchedCard extends StatelessWidget {
   const _UnmatchedCard({required this.text});
   @override
   Widget build(BuildContext context) => Card(
-        margin: const EdgeInsets.only(bottom: 8),
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Text(text,
-              style: const TextStyle(fontSize: 13, color: AppTheme.textPrimary, height: 1.5)),
+    margin: const EdgeInsets.only(bottom: 8),
+    child: Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      child: Text(
+        text,
+        style: const TextStyle(
+          fontSize: 13,
+          color: AppTheme.textPrimary,
+          height: 1.5,
         ),
-      );
+        softWrap: true,
+        overflow: TextOverflow.visible,
+      ),
+    ),
+  );
 }

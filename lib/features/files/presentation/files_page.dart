@@ -24,59 +24,60 @@ class FilesPage extends ConsumerStatefulWidget {
 
 class _FilesPageState extends ConsumerState<FilesPage> {
   String? _filterType; // 'pdf', 'docx', null = all
-  String? _filterSize; // 'small', 'medium', 'large', null = all
+  String? _filterCategory; // 'Jurnal', 'Skripsi', 'Referensi', null = all
+  String _sortBy = 'name'; // 'name', 'date', 'size'
+  bool _sortAsc = true;
 
   List<FileItem> _applyFilter(List<FileItem> files) {
-    return files.where((f) {
-      // Type filter
+    final filtered = files.where((f) {
       if (_filterType != null && f.type != _filterType) return false;
-      // Size filter
-      if (_filterSize != null) {
-        try {
-          final bytes = File(f.path).lengthSync();
-          final mb = bytes / (1024 * 1024);
-          if (_filterSize == 'small' && mb >= 1) return false;
-          if (_filterSize == 'medium' && (mb < 1 || mb >= 5)) return false;
-          if (_filterSize == 'large' && mb < 5) return false;
-        } catch (_) {}
-      }
+      if (_filterCategory != null && f.category != _filterCategory) return false;
       return true;
     }).toList();
+    return _applySort(filtered);
   }
 
-  void _showFilterSheet() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (_) => StatefulBuilder(
-        builder: (ctx, setLocal) {
-          return Container(
-            decoration: const BoxDecoration(
-              color: AppTheme.surface,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-            ),
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: AppTheme.divider,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                const Text(
-                  'Filter File',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-                ),
-                const SizedBox(height: 16),
-                const Text(
+  List<FileItem> _applySort(List<FileItem> files) {
+    final sorted = List<FileItem>.from(files);
+    sorted.sort((a, b) {
+      int cmp;
+      switch (_sortBy) {
+        case 'size':
+          int sizeOf(FileItem f) {
+            try { return File(f.path).lengthSync(); } catch (_) { return 0; }
+          }
+          cmp = sizeOf(a).compareTo(sizeOf(b));
+          break;
+        case 'date':
+          cmp = a.id.compareTo(b.id); // id is autoincrement ~ insertion date
+          break;
+        default: // 'name'
+          cmp = a.name.toLowerCase().compareTo(b.name.toLowerCase());
+      }
+      return _sortAsc ? cmp : -cmp;
+    });
+    return sorted;
+  }
+
+  // Filter UI will be built directly in the main build method.
+
+  @override
+  Widget build(BuildContext context) {
+    final filesAsync = ref.watch(allFilesProvider);
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('File Manager'),
+      ),
+      body: filesAsync.when(
+        data: (allFiles) {
+          final files = _applyFilter(allFiles);
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // ── Filter Tipe ───────────────────────────────────────────────
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+                child: const Text(
                   'Tipe File',
                   style: TextStyle(
                     fontSize: 12,
@@ -84,141 +85,172 @@ class _FilesPageState extends ConsumerState<FilesPage> {
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
+              ),
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                child: Row(
                   children: [
                     _FilterChipBtn(
                       label: 'Semua',
                       active: _filterType == null,
-                      onTap: () {
-                        setState(() => _filterType = null);
-                        setLocal(() {});
-                      },
+                      onTap: () => setState(() => _filterType = null),
                     ),
+                    const SizedBox(width: 8),
                     _FilterChipBtn(
                       label: 'PDF',
                       active: _filterType == 'pdf',
-                      onTap: () {
-                        setState(() => _filterType = 'pdf');
-                        setLocal(() {});
-                      },
+                      onTap: () => setState(() => _filterType = 'pdf'),
                     ),
+                    const SizedBox(width: 8),
                     _FilterChipBtn(
                       label: 'DOCX',
                       active: _filterType == 'docx',
-                      onTap: () {
-                        setState(() => _filterType = 'docx');
-                        setLocal(() {});
-                      },
+                      onTap: () => setState(() => _filterType = 'docx'),
                     ),
                   ],
                 ),
-                const SizedBox(height: 16),
-                const Text(
-                  'Ukuran File',
+              ),
+              
+              // ── Filter Kategori ──────────────────────────────────────────────
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                child: const Text(
+                  'Kategori File',
                   style: TextStyle(
                     fontSize: 12,
                     color: AppTheme.textSecondary,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
+              ),
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                child: Row(
                   children: [
                     _FilterChipBtn(
                       label: 'Semua',
-                      active: _filterSize == null,
-                      onTap: () {
-                        setState(() => _filterSize = null);
-                        setLocal(() {});
-                      },
+                      active: _filterCategory == null,
+                      onTap: () => setState(() => _filterCategory = null),
                     ),
+                    const SizedBox(width: 8),
                     _FilterChipBtn(
-                      label: 'Kecil (<1MB)',
-                      active: _filterSize == 'small',
-                      onTap: () {
-                        setState(() => _filterSize = 'small');
-                        setLocal(() {});
-                      },
+                      label: 'Referensi',
+                      active: _filterCategory == 'Referensi',
+                      onTap: () => setState(() => _filterCategory = 'Referensi'),
                     ),
+                    const SizedBox(width: 8),
                     _FilterChipBtn(
-                      label: 'Sedang (1–5MB)',
-                      active: _filterSize == 'medium',
-                      onTap: () {
-                        setState(() => _filterSize = 'medium');
-                        setLocal(() {});
-                      },
+                      label: 'Jurnal',
+                      active: _filterCategory == 'Jurnal',
+                      onTap: () => setState(() => _filterCategory = 'Jurnal'),
                     ),
+                    const SizedBox(width: 8),
                     _FilterChipBtn(
-                      label: 'Besar (>5MB)',
-                      active: _filterSize == 'large',
-                      onTap: () {
-                        setState(() => _filterSize = 'large');
-                        setLocal(() {});
-                      },
+                      label: 'Skripsi',
+                      active: _filterCategory == 'Skripsi',
+                      onTap: () => setState(() => _filterCategory = 'Skripsi'),
                     ),
                   ],
                 ),
-              ],
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final filesAsync = ref.watch(allFilesProvider);
-    final hasFilter = _filterType != null || _filterSize != null;
-
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('File Manager'),
-        actions: [
-          IconButton(
-            icon: Badge(
-              isLabelVisible: hasFilter,
-              smallSize: 8,
-              child: const Icon(Icons.filter_list_rounded),
-            ),
-            tooltip: 'Filter',
-            onPressed: _showFilterSheet,
-          ),
-        ],
-      ),
-      body: filesAsync.when(
-        data: (allFiles) {
-          final files = _applyFilter(allFiles);
-          if (allFiles.isEmpty) {
-            return const Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.folder_open_rounded, size: 64, color: AppTheme.textSecondary),
-                  SizedBox(height: 12),
-                  Text('Belum ada file', style: TextStyle(color: AppTheme.textSecondary)),
-                ],
               ),
-            );
-          }
-          if (files.isEmpty) {
-            return const Center(
-              child: Text('Tidak ada file sesuai filter', style: TextStyle(color: AppTheme.textSecondary)),
-            );
-          }
-          return ListView.builder(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
-            itemCount: files.length,
-            itemBuilder: (_, i) => _FileTile(
-              file: files[i],
-              onDelete: () async {
-                await _filesRepo.deleteFile(files[i].id);
-                ref.invalidate(allFilesProvider);
-              },
-            ),
+              
+              // ── Sort buttons ──────────────────────────────────────────────
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                child: Row(
+                  children: [
+                    const Text(
+                      'Urutkan:',
+                      style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                    ),
+                    const SizedBox(width: 8),
+                    _SortBtn(
+                      label: 'Abjad',
+                      icon: Icons.sort_by_alpha_rounded,
+                      active: _sortBy == 'name',
+                      ascending: _sortAsc,
+                      onTap: () => setState(() {
+                        if (_sortBy == 'name') {
+                          _sortAsc = !_sortAsc;
+                        } else {
+                          _sortBy = 'name';
+                          _sortAsc = true;
+                        }
+                      }),
+                    ),
+                    const SizedBox(width: 6),
+                    _SortBtn(
+                      label: 'Tanggal',
+                      icon: Icons.calendar_today_rounded,
+                      active: _sortBy == 'date',
+                      ascending: _sortAsc,
+                      onTap: () => setState(() {
+                        if (_sortBy == 'date') {
+                          _sortAsc = !_sortAsc;
+                        } else {
+                          _sortBy = 'date';
+                          _sortAsc = false;
+                        }
+                      }),
+                    ),
+                    const SizedBox(width: 6),
+                    _SortBtn(
+                      label: 'Ukuran',
+                      icon: Icons.data_usage_rounded,
+                      active: _sortBy == 'size',
+                      ascending: _sortAsc,
+                      onTap: () => setState(() {
+                        if (_sortBy == 'size') {
+                          _sortAsc = !_sortAsc;
+                        } else {
+                          _sortBy = 'size';
+                          _sortAsc = false;
+                        }
+                      }),
+                    ),
+                  ],
+                ),
+              ),
+              if (allFiles.isEmpty)
+                const Expanded(
+                  child: Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.folder_open_rounded, size: 64, color: AppTheme.textSecondary),
+                        SizedBox(height: 12),
+                        Text('Belum ada file', style: TextStyle(color: AppTheme.textSecondary)),
+                      ],
+                    ),
+                  ),
+                )
+              else if (files.isEmpty)
+                const Expanded(
+                  child: Center(
+                    child: Text('Tidak ada file sesuai filter', style: TextStyle(color: AppTheme.textSecondary)),
+                  ),
+                )
+              else
+                Expanded(
+                  child: ListView.builder(
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 100),
+                    itemCount: files.length,
+                    itemBuilder: (_, i) => _FileTile(
+                      file: files[i],
+                      onDelete: () async {
+                        await _filesRepo.deleteFile(files[i].id);
+                        ref.invalidate(allFilesProvider);
+                      },
+                      onCategoryChanged: (newCat) async {
+                        await _filesRepo.updateCategory(files[i].id, newCat);
+                        ref.invalidate(allFilesProvider);
+                      },
+                    ),
+                  ),
+                ),
+            ],
           );
         },
         loading: () => const Center(child: CircularProgressIndicator()),
@@ -238,28 +270,82 @@ class _FilesPageState extends ConsumerState<FilesPage> {
       final result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
         allowedExtensions: ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png'],
+        allowMultiple: true, // multiple import
       );
       if (result == null || result.files.isEmpty) return;
 
-      final picked = result.files.first;
-      if (picked.path == null) return;
+      // Load existing files for duplicate check
+      final existingFiles = await _filesRepo.getFiles();
 
       final appDir = await getApplicationDocumentsDirectory();
-      final dest = p.join(appDir.path, 'skripsi_files', picked.name);
-      await Directory(p.dirname(dest)).create(recursive: true);
-      await File(picked.path!).copy(dest);
+      final destDir = p.join(appDir.path, 'skripsi_files');
+      await Directory(destDir).create(recursive: true);
 
-      await _filesRepo.addFile(picked.name, dest);
+      int imported = 0;
+      int skipped = 0;
+      final skippedNames = <String>[];
+
+      for (final picked in result.files) {
+        if (picked.path == null) continue;
+
+        final srcFile = File(picked.path!);
+        int srcSize;
+        try {
+          srcSize = srcFile.lengthSync();
+        } catch (_) {
+          skipped++;
+          skippedNames.add(picked.name);
+          continue;
+        }
+
+        // Duplicate check: same name AND same file size = skip
+        final isDuplicate = existingFiles.any((f) {
+          if (f.name != picked.name) return false;
+          try {
+            return File(f.path).lengthSync() == srcSize;
+          } catch (_) {
+            return false;
+          }
+        });
+
+        if (isDuplicate) {
+          skipped++;
+          skippedNames.add(picked.name);
+          continue;
+        }
+
+        final dest = p.join(destDir, picked.name);
+        await srcFile.copy(dest);
+        await _filesRepo.addFile(picked.name, dest);
+        imported++;
+      }
+
       ref.invalidate(allFilesProvider);
 
       if (!context.mounted) return;
+
+      String msg;
+      if (imported > 0 && skipped == 0) {
+        msg = '$imported file berhasil diimpor.';
+      } else if (imported > 0 && skipped > 0) {
+        msg = '$imported file diimpor, $skipped sudah ada (dilewati).';
+      } else {
+        msg = 'Semua file sudah pernah diimpor sebelumnya.';
+      }
+
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${picked.name} berhasil diimpor')),
+        SnackBar(
+          content: Text(msg),
+          backgroundColor: imported > 0 ? null : Colors.orange[800],
+        ),
       );
     } catch (e) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Gagal mengimpor file: $e'), backgroundColor: Colors.red),
+        SnackBar(
+          content: Text('Gagal mengimpor file: $e'),
+          backgroundColor: Colors.red,
+        ),
       );
     }
   }
@@ -270,7 +356,13 @@ class _FilesPageState extends ConsumerState<FilesPage> {
 class _FileTile extends StatelessWidget {
   final FileItem file;
   final VoidCallback onDelete;
-  const _FileTile({required this.file, required this.onDelete});
+  final ValueChanged<String> onCategoryChanged;
+
+  const _FileTile({
+    required this.file,
+    required this.onDelete,
+    required this.onCategoryChanged,
+  });
 
   IconData get _icon {
     switch (file.type) {
@@ -311,33 +403,124 @@ class _FileTile extends StatelessWidget {
     }
   }
 
+  void _showCategoryOptions(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => Container(
+        decoration: const BoxDecoration(
+          color: AppTheme.surface,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        padding: const EdgeInsets.only(top: 16, bottom: 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppTheme.divider,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 20),
+              child: Text(
+                'Pilih Kategori',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+              ),
+            ),
+            const SizedBox(height: 8),
+            ListTile(
+              title: const Text('Referensi'),
+              onTap: () {
+                Navigator.pop(context);
+                onCategoryChanged('Referensi');
+              },
+            ),
+            ListTile(
+              title: const Text('Jurnal'),
+              onTap: () {
+                Navigator.pop(context);
+                onCategoryChanged('Jurnal');
+              },
+            ),
+            ListTile(
+              title: const Text('Skripsi'),
+              onTap: () {
+                Navigator.pop(context);
+                onCategoryChanged('Skripsi');
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Card(
-      margin: const EdgeInsets.symmetric(vertical: 5),
+      margin: const EdgeInsets.symmetric(vertical: 6),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Row(
+        padding: const EdgeInsets.all(12),
+        child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // File type icon
-            Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                color: _iconColor.withAlpha(30),
-                borderRadius: BorderRadius.circular(10),
+            // Category label above title and icon
+            GestureDetector(
+              onTap: () => _showCategoryOptions(context),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                margin: const EdgeInsets.only(bottom: 10),
+                decoration: BoxDecoration(
+                  color: AppTheme.primary.withAlpha(20),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: AppTheme.primary.withAlpha(50)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      file.category,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: AppTheme.primary,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    const Icon(Icons.edit_rounded, size: 12, color: AppTheme.primary),
+                  ],
+                ),
               ),
-              child: Icon(_icon, color: _iconColor, size: 22),
             ),
-            const SizedBox(width: 12),
-            // File info — full name, no truncation
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    file.name,
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // File type icon
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: _iconColor.withAlpha(30),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(_icon, color: _iconColor, size: 22),
+                ),
+                const SizedBox(width: 12),
+                // File info — full name, no truncation
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        file.name,
                     style: const TextStyle(
                       color: AppTheme.textPrimary,
                       fontSize: 14,
@@ -431,6 +614,8 @@ class _FileTile extends StatelessWidget {
                 ),
               ],
             ),
+              ],
+            ),
           ],
         ),
       ),
@@ -440,7 +625,7 @@ class _FileTile extends StatelessWidget {
 
 // ─── Popup File Selector (reusable widget) ────────────────────────────────────
 
-class FilePickerSheet extends StatelessWidget {
+class FilePickerSheet extends StatefulWidget {
   final List<FileItem> files;
   final FileItem? selected;
   final String title;
@@ -468,7 +653,19 @@ class FilePickerSheet extends StatelessWidget {
   }
 
   @override
+  State<FilePickerSheet> createState() => _FilePickerSheetState();
+}
+
+class _FilePickerSheetState extends State<FilePickerSheet> {
+  String? _filterCategory;
+
+  @override
   Widget build(BuildContext context) {
+    final filteredFiles = widget.files.where((f) {
+      if (_filterCategory != null && f.category != _filterCategory) return false;
+      return true;
+    }).toList();
+
     return DraggableScrollableSheet(
       initialChildSize: 0.55,
       maxChildSize: 0.9,
@@ -496,7 +693,7 @@ class FilePickerSheet extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
               child: Text(
-                title,
+                widget.title,
                 style: const TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w700,
@@ -504,13 +701,45 @@ class FilePickerSheet extends StatelessWidget {
                 ),
               ),
             ),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              child: Row(
+                children: [
+                  _FilterChipBtn(
+                    label: 'Semua',
+                    active: _filterCategory == null,
+                    onTap: () => setState(() => _filterCategory = null),
+                  ),
+                  const SizedBox(width: 8),
+                  _FilterChipBtn(
+                    label: 'Referensi',
+                    active: _filterCategory == 'Referensi',
+                    onTap: () => setState(() => _filterCategory = 'Referensi'),
+                  ),
+                  const SizedBox(width: 8),
+                  _FilterChipBtn(
+                    label: 'Jurnal',
+                    active: _filterCategory == 'Jurnal',
+                    onTap: () => setState(() => _filterCategory = 'Jurnal'),
+                  ),
+                  const SizedBox(width: 8),
+                  _FilterChipBtn(
+                    label: 'Skripsi',
+                    active: _filterCategory == 'Skripsi',
+                    onTap: () => setState(() => _filterCategory = 'Skripsi'),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
             const Divider(height: 1),
-            if (files.isEmpty)
+            if (filteredFiles.isEmpty)
               const Padding(
                 padding: EdgeInsets.all(32),
                 child: Center(
                   child: Text(
-                    'Belum ada file DOCX/PDF',
+                    'Tidak ada file sesuai filter',
                     style: TextStyle(color: AppTheme.textSecondary),
                   ),
                 ),
@@ -523,10 +752,10 @@ class FilePickerSheet extends StatelessWidget {
                     horizontal: 12,
                     vertical: 8,
                   ),
-                  itemCount: files.length,
+                  itemCount: filteredFiles.length,
                   itemBuilder: (_, i) {
-                    final f = files[i];
-                    final isSelected = selected?.id == f.id;
+                    final f = filteredFiles[i];
+                    final isSelected = widget.selected?.id == f.id;
                     return _SheetFileTile(
                       file: f,
                       isSelected: isSelected,
@@ -673,3 +902,64 @@ class _FilterChipBtn extends StatelessWidget {
     );
   }
 }
+
+// ─── Sort Button ──────────────────────────────────────────────────────────────
+
+class _SortBtn extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final bool active;
+  final bool ascending;
+  final VoidCallback onTap;
+
+  const _SortBtn({
+    required this.label,
+    required this.icon,
+    required this.active,
+    required this.ascending,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: active ? AppTheme.primary.withAlpha(20) : Colors.transparent,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: active ? AppTheme.primary : AppTheme.divider,
+            width: 1.2,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 13, color: active ? AppTheme.primary : AppTheme.textSecondary),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: active ? FontWeight.w600 : FontWeight.normal,
+                color: active ? AppTheme.primary : AppTheme.textSecondary,
+              ),
+            ),
+            if (active) ...[
+              const SizedBox(width: 2),
+              Icon(
+                ascending ? Icons.arrow_upward_rounded : Icons.arrow_downward_rounded,
+                size: 11,
+                color: AppTheme.primary,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
