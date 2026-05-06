@@ -236,25 +236,25 @@ class _AiPageState extends State<AiPage> {
                 ),
                 // Results list
                 Expanded(
-                  child: _searchResults.isEmpty && _ctrl.hasDocument
-                      ? const Center(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.search_off_rounded, size: 48, color: AppTheme.textSecondary),
-                              SizedBox(height: 8),
-                              Text(
-                                'Tidak ada kutipan/jurnal ditemukan.',
-                                style: TextStyle(color: AppTheme.textSecondary),
-                              ),
-                            ],
-                          ),
-                        )
+                  child: !_ctrl.hasDocument
+                      ? const SizedBox.shrink()
                       : ListView.builder(
                           padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                          itemCount: _searchResults.length,
+                          itemCount: _searchResults.length + 1,
                           itemBuilder: (context, index) {
-                            return ResultCard(item: _searchResults[index]);
+                            if (index == 0) {
+                              return ResultCard(
+                                item: JournalItem(
+                                  title: 'Analisis Akademik Jurnal',
+                                  text: _ctrl.documentText,
+                                  chapter: 0,
+                                  paragraphIndex: 0,
+                                  lineIndex: 0,
+                                ),
+                              );
+                            }
+                            final itemIndex = index - 1;
+                            return ResultCard(item: _searchResults[itemIndex]);
                           },
                         ),
                 ),
@@ -312,8 +312,12 @@ class _ResultCardState extends State<ResultCard> {
 
   /// Unique key per journal item used as DB identifier.
   String get _itemKey {
-    final base = '${widget.item.chapter}_${widget.item.paragraphIndex}_'
-        '${widget.item.title.hashCode.abs()}';
+    // text.hashCode ensures the key is unique to the document content
+    final textHash = widget.item.text.length > 50 
+        ? widget.item.text.substring(0, 50).hashCode.abs() 
+        : widget.item.text.hashCode.abs();
+    
+    final base = '${widget.item.chapter}_${widget.item.paragraphIndex}_$textHash';
     return base;
   }
 
@@ -350,10 +354,19 @@ class _ResultCardState extends State<ResultCard> {
 
     // Persona diinjeksi otomatis oleh GeminiService/OpenRouterService.
     // Di sini cukup kirim konteks akademik yang relevan.
-    final prompt =
-        'Analisis kutipan jurnal ilmiah berikut dan jelaskan maknanya '
-        'secara akademis, termasuk relevansinya untuk penelitian:\n\n'
-        '"$textToSend"';
+    final isFullDoc = widget.item.chapter == 0;
+    final prompt = isFullDoc
+        ? 'Sebagai dosen pembimbing akademik, buatkan analisis komprehensif untuk jurnal ini secara terstruktur. '
+          'Sertakan poin-poin berikut:\n'
+          '1. Ringkasan singkat jurnal\n'
+          '2. Keyword / Kata kunci utama\n'
+          '3. Metodologi penelitian yang digunakan\n'
+          '4. Kesimpulan jurnal\n'
+          '5. Highlight poin penting / kontribusi penelitian\n\n'
+          'Teks dokumen:\n"$textToSend"'
+        : 'Analisis kutipan jurnal ilmiah berikut dan jelaskan maknanya '
+          'secara akademis, termasuk relevansinya untuk penelitian:\n\n'
+          '"$textToSend"';
 
     final response = await _gemini.sendPromptWithFallback(prompt);
 
@@ -406,7 +419,7 @@ class _ResultCardState extends State<ResultCard> {
       contextBuf.writeln('$roleLabel: ${m.content}');
     }
     contextBuf.writeln('\nMahasiswa: $question');
-    contextBuf.writeln('\nBerikan jawaban sebagai dosen pembimbing akademik.');
+    contextBuf.writeln('\nBerikan jawaban sebagai dosen pembimbing akademik yang solutif dan profesional.');
 
     if (mounted) {
       setState(() {
@@ -506,31 +519,34 @@ class _ResultCardState extends State<ResultCard> {
               ),
             ),
             const SizedBox(height: 6),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-              decoration: BoxDecoration(
-                color: AppTheme.primary.withAlpha(18),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Text(
-                _locationLabel,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w600,
-                  color: AppTheme.primary,
-                  fontSize: 11,
+            if (widget.item.chapter != 0)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                decoration: BoxDecoration(
+                  color: AppTheme.primary.withAlpha(18),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  _locationLabel,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.primary,
+                    fontSize: 11,
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 12),
+            if (widget.item.chapter != 0) const SizedBox(height: 12),
             const Divider(height: 1),
             const SizedBox(height: 12),
 
             // ── Teks kutipan ──
-            Text(
-              widget.item.text,
-              style: const TextStyle(fontSize: 13, color: AppTheme.textPrimary, height: 1.5),
-            ),
-            const SizedBox(height: 14),
+            if (widget.item.chapter != 0) ...[
+              Text(
+                widget.item.text,
+                style: const TextStyle(fontSize: 13, color: AppTheme.textPrimary, height: 1.5),
+              ),
+              const SizedBox(height: 14),
+            ],
 
             // ── AI Section ──
             if (_loadingHistory)
