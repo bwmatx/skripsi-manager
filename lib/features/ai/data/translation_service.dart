@@ -9,7 +9,7 @@ import 'package:google_mlkit_language_id/google_mlkit_language_id.dart';
 /// Usage:
 ///   final svc = TranslationService();
 ///   await svc.ensureModelsReady();  // downloads models if not present
-///   final result = await svc.translateToEnglish('Penelitian ini bertujuan...');
+///   final result = await svc.translateToIndonesian('This research aims to...');
 ///   svc.dispose();
 class TranslationService {
   OnDeviceTranslator? _idToEn;
@@ -137,16 +137,16 @@ class TranslationService {
     }
   }
 
-  /// Auto-detect and translate text to English.
-  /// If it's already English, returns the original text.
-  Future<String> normalizeToEnglish(String text) async {
+  /// Auto-detect and translate text to Indonesian.
+  /// If it's already Indonesian or undetermined, returns the original text.
+  Future<String> normalizeToIndonesian(String text) async {
     if (text.trim().isEmpty) return text;
     final lang = await detectLanguage(text);
-    if (lang == 'id') {
-      final result = await translateToEnglish(text);
+    if (lang == 'en') {
+      final result = await translateToIndonesian(text);
       return result ?? text;
     }
-    // If English or undetermined, return as is.
+    // If Indonesian or undetermined, return as is.
     return text;
   }
 

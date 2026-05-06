@@ -114,14 +114,14 @@ class _ComparisonPageState extends ConsumerState<ComparisonPage> {
         return;
       }
 
-      // ── Translation mode: translate all paragraphs to English for cross-lang compare
+      // ── Translation mode: translate all paragraphs to Indonesian for cross-lang compare
       if (_translateMode && _modelsReady) {
         if (!mounted) return;
-        setState(() => _statusText = 'Menormalisasi dokumen sumber...');
+        setState(() => _statusText = 'Menormalisasi dokumen sumber (ENG → ID)...');
         source = await _translateParagraphs(source);
 
         if (!mounted) return;
-        setState(() => _statusText = 'Menormalisasi dokumen pembanding...');
+        setState(() => _statusText = 'Menormalisasi dokumen pembanding (ENG → ID)...');
         target = await _translateParagraphs(target);
       }
 
@@ -155,13 +155,13 @@ class _ComparisonPageState extends ConsumerState<ComparisonPage> {
     }
   }
 
-  /// Normalize a list of paragraphs to English using ML Kit.
-  /// Automatically detects language and only translates if it's Indonesian.
+  /// Normalize a list of paragraphs to Indonesian using ML Kit.
+  /// Automatically detects language and only translates if it's English.
   Future<List<String>> _translateParagraphs(List<String> paragraphs) async {
     final translated = <String>[];
     for (final para in paragraphs) {
       try {
-        final result = await _translationService.normalizeToEnglish(para);
+        final result = await _translationService.normalizeToIndonesian(para);
         translated.add(result);
       } catch (_) {
         translated.add(para); // fallback to original
@@ -264,7 +264,7 @@ class _ComparisonPageState extends ConsumerState<ComparisonPage> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'ENG to ID',
+                          'Terjemahkan ke Bahasa Indonesia',
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w600,
