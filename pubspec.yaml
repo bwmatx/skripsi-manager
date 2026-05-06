@@ -1,0 +1,54 @@
+name: skripsi_manager
+description: "Skripsi Manager – Offline-first thesis management app"
+publish_to: 'none'
+version: 1.1.0+2
+
+environment:
+  sdk: ^3.11.5
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # State management
+  flutter_riverpod: ^2.6.1
+
+  # Local database
+  sqflite: ^2.4.1
+  path: ^1.9.0
+
+  # File handling
+  file_picker: ^8.1.7
+  path_provider: ^2.1.5
+  open_file: ^3.5.10
+
+  # Notifications
+  flutter_local_notifications: ^18.0.1
+  timezone: ^0.10.1
+
+  # Secure local storage for PIN
+  flutter_secure_storage: ^9.2.4
+
+  # HTTP for Gemini API
+  http: ^1.4.0
+
+  # DOCX parsing (ZIP + XML)
+  archive: ^3.6.1
+  xml: ^6.5.0
+
+  # PDF text extraction (real text, not rendering)
+  syncfusion_flutter_pdf: ^28.2.12
+
+  # Connectivity check (offline detection)
+  connectivity_plus: ^6.1.4
+
+  cupertino_icons: ^1.0.8
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+
+flutter:
+  uses-material-design: true
