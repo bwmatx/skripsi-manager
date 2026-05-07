@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:open_file/open_file.dart';
 import 'package:path_provider/path_provider.dart';
@@ -23,6 +24,7 @@ class FilesPage extends ConsumerStatefulWidget {
 }
 
 class _FilesPageState extends ConsumerState<FilesPage> {
+  String _searchQuery = '';
   String? _filterType; // 'pdf', 'docx', null = all
   String? _filterCategory; // 'Jurnal', 'Skripsi', 'Referensi', null = all
   String _sortBy = 'name'; // 'name', 'date', 'size'
@@ -32,6 +34,14 @@ class _FilesPageState extends ConsumerState<FilesPage> {
     final filtered = files.where((f) {
       if (_filterType != null && f.type != _filterType) return false;
       if (_filterCategory != null && f.category != _filterCategory) return false;
+      
+      if (_searchQuery.isNotEmpty) {
+        final query = _searchQuery.toLowerCase();
+        final matchName = f.name.toLowerCase().contains(query);
+        final matchAuthor = (f.authors ?? '').toLowerCase().contains(query);
+        final matchTags = (f.tags ?? '').toLowerCase().contains(query);
+        if (!matchName && !matchAuthor && !matchTags) return false;
+      }
       return true;
     }).toList();
     return _applySort(filtered);
@@ -59,8 +69,92 @@ class _FilesPageState extends ConsumerState<FilesPage> {
     return sorted;
   }
 
-  // Filter UI will be built directly in the main build method.
+  String _sortLabel() {
+    if (_sortBy == 'date') return _sortAsc ? 'Tanggal ↑' : 'Tanggal ↓';
+    if (_sortBy == 'size') return _sortAsc ? 'Ukuran ↑' : 'Ukuran ↓';
+    return _sortAsc ? 'Abjad A–Z' : 'Abjad Z–A';
+  }
 
+  void _showTypePopup(BuildContext context) async {
+    final RenderBox box = context.findRenderObject() as RenderBox;
+    final Offset offset = box.localToGlobal(Offset.zero);
+    final result = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromLTRB(
+        offset.dx, offset.dy + box.size.height + 4,
+        offset.dx + box.size.width, offset.dy + box.size.height + 200,
+      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      items: [
+        const PopupMenuItem(value: 'ALL', child: Text('Semua Tipe')),
+        const PopupMenuItem(value: 'pdf', child: Text('PDF')),
+        const PopupMenuItem(value: 'docx', child: Text('DOCX')),
+      ],
+    );
+    if (result != null) {
+      setState(() => _filterType = (result == 'ALL') ? null : result);
+    }
+  }
+
+  void _showCategoryPopup(BuildContext context, List<FileItem> allFiles) async {
+    final cats = <String>{'Jurnal', 'Skripsi', 'Referensi'};
+    for (final f in allFiles) {
+      if (f.category.isNotEmpty) cats.add(f.category);
+    }
+    final catList = cats.toList()..sort();
+
+    final RenderBox box = context.findRenderObject() as RenderBox;
+    final Offset offset = box.localToGlobal(Offset.zero);
+    final result = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromLTRB(
+        offset.dx, offset.dy + box.size.height + 4,
+        offset.dx + box.size.width + 100, offset.dy + box.size.height + 200,
+      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      items: [
+        const PopupMenuItem(value: 'ALL', child: Text('Semua Koleksi')),
+        ...catList.map((c) => PopupMenuItem(value: c, child: Text(c))),
+      ],
+    );
+    if (result != null) {
+      setState(() => _filterCategory = (result == 'ALL') ? null : result);
+    }
+  }
+
+  void _showSortPopup(BuildContext context) async {
+    final RenderBox box = context.findRenderObject() as RenderBox;
+    final Offset offset = box.localToGlobal(Offset.zero);
+    final result = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromLTRB(
+        offset.dx, offset.dy + box.size.height + 4,
+        offset.dx + box.size.width + 100, offset.dy + box.size.height + 200,
+      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      items: const [
+        PopupMenuItem(value: 'name_asc',  child: Text('Abjad A–Z')),
+        PopupMenuItem(value: 'name_desc', child: Text('Abjad Z–A')),
+        PopupMenuItem(value: 'date_desc', child: Text('Tanggal Terbaru')),
+        PopupMenuItem(value: 'date_asc',  child: Text('Tanggal Terlama')),
+        PopupMenuItem(value: 'size_desc', child: Text('Ukuran Terbesar')),
+        PopupMenuItem(value: 'size_asc',  child: Text('Ukuran Terkecil')),
+      ],
+    );
+    if (result == null) return;
+    setState(() {
+      switch (result) {
+        case 'name_asc':  _sortBy = 'name'; _sortAsc = true;  break;
+        case 'name_desc': _sortBy = 'name'; _sortAsc = false; break;
+        case 'date_desc': _sortBy = 'date'; _sortAsc = false; break;
+        case 'date_asc':  _sortBy = 'date'; _sortAsc = true;  break;
+        case 'size_desc': _sortBy = 'size'; _sortAsc = false; break;
+        case 'size_asc':  _sortBy = 'size'; _sortAsc = true;  break;
+      }
+    });
+  }
+
+  // Filter UI helper.
   @override
   Widget build(BuildContext context) {
     final filesAsync = ref.watch(allFilesProvider);
@@ -74,142 +168,68 @@ class _FilesPageState extends ConsumerState<FilesPage> {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // ── Filter Tipe ───────────────────────────────────────────────
+              // ── Search Bar ───────────────────────────────────────────────────
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-                child: const Text(
-                  'Tipe File',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: AppTheme.textSecondary,
-                    fontWeight: FontWeight.w600,
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                child: TextField(
+                  decoration: InputDecoration(
+                    hintText: 'Cari judul, penulis, atau tag...',
+                    prefixIcon: const Icon(Icons.search_rounded, size: 20),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: AppTheme.divider),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
                   ),
-                ),
-              ),
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                child: Row(
-                  children: [
-                    _FilterChipBtn(
-                      label: 'Semua',
-                      active: _filterType == null,
-                      onTap: () => setState(() => _filterType = null),
-                    ),
-                    const SizedBox(width: 8),
-                    _FilterChipBtn(
-                      label: 'PDF',
-                      active: _filterType == 'pdf',
-                      onTap: () => setState(() => _filterType = 'pdf'),
-                    ),
-                    const SizedBox(width: 8),
-                    _FilterChipBtn(
-                      label: 'DOCX',
-                      active: _filterType == 'docx',
-                      onTap: () => setState(() => _filterType = 'docx'),
-                    ),
-                  ],
+                  onChanged: (val) => setState(() => _searchQuery = val),
                 ),
               ),
               
-              // ── Filter Kategori ──────────────────────────────────────────────
+              // ── Filter Row: 3 compact popup buttons ───────────────────────
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-                child: const Text(
-                  'Kategori File',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: AppTheme.textSecondary,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
                 child: Row(
                   children: [
-                    _FilterChipBtn(
-                      label: 'Semua',
-                      active: _filterCategory == null,
-                      onTap: () => setState(() => _filterCategory = null),
-                    ),
+                    Builder(builder: (ctx) => _PopupFilterBtn(
+                      label: _filterType == null ? 'Tipe File' : _filterType!.toUpperCase(),
+                      icon: Icons.description_outlined,
+                      active: _filterType != null,
+                      onTap: () => _showTypePopup(ctx),
+                    )),
                     const SizedBox(width: 8),
-                    _FilterChipBtn(
-                      label: 'Referensi',
-                      active: _filterCategory == 'Referensi',
-                      onTap: () => setState(() => _filterCategory = 'Referensi'),
-                    ),
+                    Builder(builder: (ctx) => _PopupFilterBtn(
+                      label: _filterCategory == null ? 'Koleksi' : _filterCategory!,
+                      icon: Icons.folder_outlined,
+                      active: _filterCategory != null,
+                      onTap: () => _showCategoryPopup(ctx, allFiles),
+                    )),
                     const SizedBox(width: 8),
-                    _FilterChipBtn(
-                      label: 'Jurnal',
-                      active: _filterCategory == 'Jurnal',
-                      onTap: () => setState(() => _filterCategory = 'Jurnal'),
-                    ),
-                    const SizedBox(width: 8),
-                    _FilterChipBtn(
-                      label: 'Skripsi',
-                      active: _filterCategory == 'Skripsi',
-                      onTap: () => setState(() => _filterCategory = 'Skripsi'),
-                    ),
-                  ],
-                ),
-              ),
-              
-              // ── Sort buttons ──────────────────────────────────────────────
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-                child: Row(
-                  children: [
-                    const Text(
-                      'Urutkan:',
-                      style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
-                    ),
-                    const SizedBox(width: 8),
-                    _SortBtn(
-                      label: 'Abjad',
-                      icon: Icons.sort_by_alpha_rounded,
-                      active: _sortBy == 'name',
-                      ascending: _sortAsc,
-                      onTap: () => setState(() {
-                        if (_sortBy == 'name') {
-                          _sortAsc = !_sortAsc;
-                        } else {
+                    Builder(builder: (ctx) => _PopupFilterBtn(
+                      label: _sortLabel(),
+                      icon: Icons.sort_rounded,
+                      active: _sortBy != 'name' || !_sortAsc,
+                      onTap: () => _showSortPopup(ctx),
+                    )),
+                    if (_filterType != null || _filterCategory != null || _sortBy != 'name' || !_sortAsc) ...[
+                      const SizedBox(width: 6),
+                      GestureDetector(
+                        onTap: () => setState(() {
+                          _filterType = null;
+                          _filterCategory = null;
                           _sortBy = 'name';
                           _sortAsc = true;
-                        }
-                      }),
-                    ),
-                    const SizedBox(width: 6),
-                    _SortBtn(
-                      label: 'Tanggal',
-                      icon: Icons.calendar_today_rounded,
-                      active: _sortBy == 'date',
-                      ascending: _sortAsc,
-                      onTap: () => setState(() {
-                        if (_sortBy == 'date') {
-                          _sortAsc = !_sortAsc;
-                        } else {
-                          _sortBy = 'date';
-                          _sortAsc = false;
-                        }
-                      }),
-                    ),
-                    const SizedBox(width: 6),
-                    _SortBtn(
-                      label: 'Ukuran',
-                      icon: Icons.data_usage_rounded,
-                      active: _sortBy == 'size',
-                      ascending: _sortAsc,
-                      onTap: () => setState(() {
-                        if (_sortBy == 'size') {
-                          _sortAsc = !_sortAsc;
-                        } else {
-                          _sortBy = 'size';
-                          _sortAsc = false;
-                        }
-                      }),
-                    ),
+                        }),
+                        child: Container(
+                          padding: const EdgeInsets.all(5),
+                          decoration: BoxDecoration(
+                            color: AppTheme.error.withAlpha(20),
+                            shape: BoxShape.circle,
+                            border: Border.all(color: AppTheme.error.withAlpha(60)),
+                          ),
+                          child: const Icon(Icons.close_rounded, size: 13, color: AppTheme.error),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -353,7 +373,7 @@ class _FilesPageState extends ConsumerState<FilesPage> {
 
 // ─── File Tile ────────────────────────────────────────────────────────────────
 
-class _FileTile extends StatelessWidget {
+class _FileTile extends ConsumerWidget {
   final FileItem file;
   final VoidCallback onDelete;
   final ValueChanged<String> onCategoryChanged;
@@ -403,7 +423,14 @@ class _FileTile extends StatelessWidget {
     }
   }
 
-  void _showCategoryOptions(BuildContext context) {
+  void _showCategoryOptions(BuildContext context, WidgetRef ref) {
+    final allFiles = ref.read(allFilesProvider).valueOrNull ?? [];
+    final categories = {'Referensi', 'Jurnal', 'Skripsi'};
+    for (var f in allFiles) {
+      if (f.category.isNotEmpty) categories.add(f.category);
+    }
+    final catList = categories.toList()..sort();
+
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -431,31 +458,56 @@ class _FileTile extends StatelessWidget {
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: 20),
               child: Text(
-                'Pilih Kategori',
+                'Pilih Koleksi / Kategori',
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
               ),
             ),
             const SizedBox(height: 8),
-            ListTile(
-              title: const Text('Referensi'),
-              onTap: () {
-                Navigator.pop(context);
-                onCategoryChanged('Referensi');
-              },
-            ),
-            ListTile(
-              title: const Text('Jurnal'),
-              onTap: () {
-                Navigator.pop(context);
-                onCategoryChanged('Jurnal');
-              },
-            ),
-            ListTile(
-              title: const Text('Skripsi'),
-              onTap: () {
-                Navigator.pop(context);
-                onCategoryChanged('Skripsi');
-              },
+            Expanded(
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: catList.length + 1,
+                itemBuilder: (ctx, i) {
+                  if (i == catList.length) {
+                    return ListTile(
+                      leading: const Icon(Icons.add_rounded, color: AppTheme.primary),
+                      title: const Text('Buat Koleksi Baru...', style: TextStyle(color: AppTheme.primary)),
+                      onTap: () async {
+                        Navigator.pop(ctx);
+                        final newCat = await showDialog<String>(
+                          context: context,
+                          builder: (ctx2) {
+                            final tc = TextEditingController();
+                            return AlertDialog(
+                              title: const Text('Koleksi Baru'),
+                              content: TextField(
+                                controller: tc,
+                                decoration: const InputDecoration(hintText: 'Nama Koleksi'),
+                                autofocus: true,
+                              ),
+                              actions: [
+                                TextButton(onPressed: () => Navigator.pop(ctx2), child: const Text('Batal')),
+                                ElevatedButton(onPressed: () => Navigator.pop(ctx2, tc.text.trim()), child: const Text('Simpan')),
+                              ],
+                            );
+                          },
+                        );
+                        if (newCat != null && newCat.isNotEmpty) {
+                          onCategoryChanged(newCat);
+                        }
+                      },
+                    );
+                  }
+                  return ListTile(
+                    title: Text(catList[i]),
+                    trailing: catList[i] == file.category ? const Icon(Icons.check_rounded, color: AppTheme.primary) : null,
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      onCategoryChanged(catList[i]);
+                    },
+                  );
+                },
+              ),
             ),
           ],
         ),
@@ -463,18 +515,33 @@ class _FileTile extends StatelessWidget {
     );
   }
 
+  void _showMetadata(BuildContext context, WidgetRef ref) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _MetadataSheet(
+        file: file,
+        onSaved: () => ref.invalidate(allFilesProvider),
+      ),
+    );
+  }
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 6),
-      child: Padding(
+      child: InkWell(
+        onTap: () => _showMetadata(context, ref),
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
         padding: const EdgeInsets.all(12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Category label above title and icon
             GestureDetector(
-              onTap: () => _showCategoryOptions(context),
+              onTap: () => _showCategoryOptions(context, ref),
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 margin: const EdgeInsets.only(bottom: 10),
@@ -500,6 +567,14 @@ class _FileTile extends StatelessWidget {
                 ),
               ),
             ),
+            if (file.lastOpened != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(
+                  'Terakhir dibuka: ${file.lastOpened!.day}-${file.lastOpened!.month}-${file.lastOpened!.year}',
+                  style: const TextStyle(fontSize: 10, color: AppTheme.textSecondary),
+                ),
+              ),
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -558,6 +633,37 @@ class _FileTile extends StatelessWidget {
                       ),
                     ],
                   ),
+                  if (file.authors != null && file.authors!.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                        '${file.authors} ${file.year != null ? "(${file.year})" : ""}',
+                        style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  if (file.tags != null && file.tags!.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Wrap(
+                        spacing: 4,
+                        runSpacing: 4,
+                        children: file.tags!.split(',').map((t) {
+                          return Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: AppTheme.divider,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              t.trim(),
+                              style: const TextStyle(fontSize: 9, color: AppTheme.textSecondary),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
                 ],
               ),
             ),
@@ -566,12 +672,28 @@ class _FileTile extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 IconButton(
+                  icon: Icon(
+                    file.isFavorite ? Icons.star_rounded : Icons.star_border_rounded,
+                    size: 20,
+                    color: file.isFavorite ? Colors.amber : AppTheme.textSecondary,
+                  ),
+                  onPressed: () async {
+                    await _filesRepo.toggleFavorite(file.id, !file.isFavorite);
+                    ref.invalidate(allFilesProvider);
+                  },
+                  tooltip: file.isFavorite ? 'Hapus dari Favorit' : 'Tambah ke Favorit',
+                ),
+                IconButton(
                   icon: const Icon(
                     Icons.open_in_new_rounded,
                     size: 18,
                     color: AppTheme.primary,
                   ),
-                  onPressed: () => OpenFile.open(file.path),
+                  onPressed: () async {
+                    await _filesRepo.markAsOpened(file.id);
+                    ref.invalidate(allFilesProvider);
+                    OpenFile.open(file.path);
+                  },
                   tooltip: 'Buka',
                 ),
                 IconButton(
@@ -614,9 +736,165 @@ class _FileTile extends StatelessWidget {
                 ),
               ],
             ),
-              ],
-            ),
           ],
+        ),
+      ],
+    ),
+  ),
+  ),
+);
+  }
+}
+
+// ─── Metadata Editor Sheet ──────────────────────────────────────────────────
+
+class _MetadataSheet extends StatefulWidget {
+  final FileItem file;
+  final VoidCallback onSaved;
+
+  const _MetadataSheet({required this.file, required this.onSaved});
+
+  @override
+  State<_MetadataSheet> createState() => _MetadataSheetState();
+}
+
+class _MetadataSheetState extends State<_MetadataSheet> {
+  late TextEditingController _authorsCtrl;
+  late TextEditingController _yearCtrl;
+  late TextEditingController _tagsCtrl;
+  late TextEditingController _notesCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _authorsCtrl = TextEditingController(text: widget.file.authors);
+    _yearCtrl = TextEditingController(text: widget.file.year);
+    _tagsCtrl = TextEditingController(text: widget.file.tags);
+    _notesCtrl = TextEditingController(text: widget.file.notes);
+  }
+
+  @override
+  void dispose() {
+    _authorsCtrl.dispose();
+    _yearCtrl.dispose();
+    _tagsCtrl.dispose();
+    _notesCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    await _filesRepo.updateMetadata(
+      widget.file.id,
+      authors: _authorsCtrl.text,
+      year: _yearCtrl.text,
+      tags: _tagsCtrl.text,
+      notes: _notesCtrl.text,
+    );
+    widget.onSaved();
+    if (mounted) Navigator.pop(context);
+  }
+
+  void _copyCitation() {
+    final author = _authorsCtrl.text.isNotEmpty ? _authorsCtrl.text : 'Unknown';
+    final year = _yearCtrl.text.isNotEmpty ? _yearCtrl.text : 'n.d.';
+    final title = widget.file.name.replaceAll(RegExp(r'\.pdf|\.docx|\.doc'), '');
+    
+    // Simple APA format approximation
+    final apa = '$author. ($year). $title.';
+    
+    Clipboard.setData(ClipboardData(text: apa));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Citation tersalin (APA)')),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: Container(
+        decoration: const BoxDecoration(
+          color: AppTheme.surface,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        padding: const EdgeInsets.all(20),
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 20),
+                  decoration: BoxDecoration(
+                    color: AppTheme.divider,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const Text('Metadata Jurnal', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 16),
+              TextField(
+                controller: _authorsCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Penulis (contoh: John Doe, Jane Smith)',
+                  border: OutlineInputBorder(),
+                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _yearCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Tahun (contoh: 2024)',
+                  border: OutlineInputBorder(),
+                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                ),
+                keyboardType: TextInputType.number,
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _tagsCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Tag (pisahkan dengan koma)',
+                  border: OutlineInputBorder(),
+                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _notesCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Catatan Pribadi',
+                  border: OutlineInputBorder(),
+                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                ),
+                maxLines: 3,
+              ),
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _copyCitation,
+                      icon: const Icon(Icons.copy_rounded, size: 18),
+                      label: const Text('Copy Citation'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: _save,
+                      icon: const Icon(Icons.save_rounded, size: 18),
+                      label: const Text('Simpan'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -711,24 +989,21 @@ class _FilePickerSheetState extends State<FilePickerSheet> {
                     active: _filterCategory == null,
                     onTap: () => setState(() => _filterCategory = null),
                   ),
-                  const SizedBox(width: 8),
-                  _FilterChipBtn(
-                    label: 'Referensi',
-                    active: _filterCategory == 'Referensi',
-                    onTap: () => setState(() => _filterCategory = 'Referensi'),
-                  ),
-                  const SizedBox(width: 8),
-                  _FilterChipBtn(
-                    label: 'Jurnal',
-                    active: _filterCategory == 'Jurnal',
-                    onTap: () => setState(() => _filterCategory = 'Jurnal'),
-                  ),
-                  const SizedBox(width: 8),
-                  _FilterChipBtn(
-                    label: 'Skripsi',
-                    active: _filterCategory == 'Skripsi',
-                    onTap: () => setState(() => _filterCategory = 'Skripsi'),
-                  ),
+                  ...(() {
+                    final cats = {'Referensi', 'Jurnal', 'Skripsi'};
+                    for (var f in widget.files) {
+                      if (f.category.isNotEmpty) cats.add(f.category);
+                    }
+                    final catList = cats.toList()..sort();
+                    return catList.map((c) => Padding(
+                      padding: const EdgeInsets.only(left: 8),
+                      child: _FilterChipBtn(
+                        label: c,
+                        active: _filterCategory == c,
+                        onTap: () => setState(() => _filterCategory = c),
+                      ),
+                    ));
+                  })(),
                 ],
               ),
             ),
@@ -867,6 +1142,59 @@ class _SheetFileTile extends StatelessWidget {
   }
 }
 
+// ─── Popup Filter Button ──────────────────────────────────────────────────────
+
+class _PopupFilterBtn extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final bool active;
+  final VoidCallback onTap;
+
+  const _PopupFilterBtn({
+    required this.label,
+    required this.icon,
+    required this.active,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+        decoration: BoxDecoration(
+          color: active ? AppTheme.primary.withAlpha(20) : AppTheme.card,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: active ? AppTheme.primary : AppTheme.divider,
+            width: active ? 1.5 : 1,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 13, color: active ? AppTheme.primary : AppTheme.textSecondary),
+            const SizedBox(width: 5),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: active ? FontWeight.w600 : FontWeight.normal,
+                color: active ? AppTheme.primary : AppTheme.textSecondary,
+              ),
+            ),
+            const SizedBox(width: 3),
+            Icon(Icons.arrow_drop_down_rounded,
+                size: 16, color: active ? AppTheme.primary : AppTheme.textSecondary),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 // ─── Filter Chip Button ───────────────────────────────────────────────────────
 
 class _FilterChipBtn extends StatelessWidget {
@@ -903,63 +1231,4 @@ class _FilterChipBtn extends StatelessWidget {
   }
 }
 
-// ─── Sort Button ──────────────────────────────────────────────────────────────
-
-class _SortBtn extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  final bool active;
-  final bool ascending;
-  final VoidCallback onTap;
-
-  const _SortBtn({
-    required this.label,
-    required this.icon,
-    required this.active,
-    required this.ascending,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
-          color: active ? AppTheme.primary.withAlpha(20) : Colors.transparent,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: active ? AppTheme.primary : AppTheme.divider,
-            width: 1.2,
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 13, color: active ? AppTheme.primary : AppTheme.textSecondary),
-            const SizedBox(width: 4),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: active ? FontWeight.w600 : FontWeight.normal,
-                color: active ? AppTheme.primary : AppTheme.textSecondary,
-              ),
-            ),
-            if (active) ...[
-              const SizedBox(width: 2),
-              Icon(
-                ascending ? Icons.arrow_upward_rounded : Icons.arrow_downward_rounded,
-                size: 11,
-                color: AppTheme.primary,
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-}
 

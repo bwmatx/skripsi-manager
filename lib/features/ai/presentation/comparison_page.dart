@@ -7,6 +7,8 @@ import 'package:skripsi_manager/features/ai/data/isolate_helpers.dart';
 import 'package:skripsi_manager/features/ai/data/translation_service.dart';
 import 'package:skripsi_manager/features/files/domain/file_item.dart';
 import 'package:skripsi_manager/features/files/presentation/files_page.dart';
+import 'package:skripsi_manager/features/history/data/analysis_history_repository.dart';
+import 'package:skripsi_manager/features/history/presentation/history_page.dart';
 
 // ─── Document cache ───────────────────────────────────────────────────────────
 
@@ -147,7 +149,7 @@ class _ComparisonPageState extends ConsumerState<ComparisonPage> {
     } catch (e) {
       if (mounted) {
         setState(() {
-          _errorMsg = 'Error: $e';
+          _errorMsg = 'Terjadi kesalahan saat memproses dokumen. Silakan coba lagi.';
           _loading = false;
           _statusText = '';
         });
@@ -201,6 +203,16 @@ class _ComparisonPageState extends ConsumerState<ComparisonPage> {
       appBar: AppBar(
         title: const Text('Perbandingan Dokumen'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.history_rounded),
+            tooltip: 'Riwayat Analisis',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const HistoryPage()),
+              );
+            },
+          ),
           if (_result != null || _sourceFile != null || _targetFile != null)
             IconButton(
               icon: const Icon(Icons.refresh_rounded),
@@ -343,7 +355,11 @@ class _ComparisonPageState extends ConsumerState<ComparisonPage> {
             // Results
             if (_result != null) ...[
               const SizedBox(height: 24),
-              _ResultView(result: _result!),
+              _ResultView(
+                result: _result!,
+                sourceName: _sourceFile?.name ?? 'Sumber',
+                targetName: _targetFile?.name ?? 'Pembanding',
+              ),
             ],
           ],
         ),
@@ -523,7 +539,14 @@ class _SelectorCard extends StatelessWidget {
 
 class _ResultView extends StatelessWidget {
   final CompareResult result;
-  const _ResultView({required this.result});
+  final String sourceName;
+  final String targetName;
+  
+  const _ResultView({
+    required this.result,
+    required this.sourceName,
+    required this.targetName,
+  });
 
   Color get _scoreColor {
     if (result.overallScore >= 0.7) return const Color(0xFFEF4444);
@@ -594,6 +617,46 @@ class _ResultView extends StatelessWidget {
               ),
             ],
           ),
+        ),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: () async {
+                  final pct = (result.overallScore * 100).toStringAsFixed(1);
+                  final sb = StringBuffer();
+                  sb.writeln('Sumber: $sourceName');
+                  sb.writeln('Pembanding: $targetName');
+                  sb.writeln('Kemiripan Dokumen: $pct%');
+                  sb.writeln('Total Paragraf Mirip: ${result.matches.length}');
+                  sb.writeln('Total Paragraf Unik: ${result.unmatchedSource.length}');
+                  sb.writeln('\n--- DETAIL PARAGRAF MIRIP ---');
+                  for (var m in result.matches) {
+                     sb.writeln('\nSkor Mirip: ${(m.score * 100).toStringAsFixed(0)}%');
+                     sb.writeln('Sumber: ${m.sourceText}');
+                     sb.writeln('Pembanding: ${m.targetText}');
+                  }
+                  
+                  final repo = AnalysisHistoryRepository();
+                  await repo.insert(AnalysisHistory(
+                    title: 'Bandingkan: $sourceName vs $targetName',
+                    type: 'Hasil Compare',
+                    content: sb.toString(),
+                    createdAt: DateTime.now(),
+                  ));
+                  
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Hasil Compare tersimpan ke riwayat.')),
+                    );
+                  }
+                },
+                icon: const Icon(Icons.save_rounded, size: 18),
+                label: const Text('Simpan Riwayat'),
+              ),
+            ),
+          ],
         ),
         const SizedBox(height: 24),
         if (result.matches.isNotEmpty) ...[

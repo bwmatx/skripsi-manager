@@ -78,7 +78,7 @@ class TranslationService {
       return true;
     } catch (e) {
       debugPrint('[TranslationService] download error: $e');
-      onProgress?.call('Gagal mengunduh model: $e');
+      onProgress?.call('Gagal mengunduh model. Pastikan koneksi internet stabil.');
       return false;
     } finally {
       _isDownloading = false;

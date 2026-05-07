@@ -1,10 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Notifications -->
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
-    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
-    <uses-permission android:name="android.permission.USE_EXACT_ALARM"/>
-    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+
 
     <!-- File access -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
@@ -41,28 +37,7 @@
             </intent-filter>
         </activity>
 
-        <!-- flutter_local_notifications: fire scheduled notifications -->
-        <!-- exported=true required on Android 12+ for AlarmManager exact alarms -->
-        <receiver
-            android:exported="true"
-            android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver"/>
 
-        <!-- flutter_local_notifications: reschedule on device boot -->
-        <receiver
-            android:exported="false"
-            android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationBootReceiver">
-            <intent-filter>
-                <action android:name="android.intent.action.BOOT_COMPLETED"/>
-                <action android:name="android.intent.action.MY_PACKAGE_REPLACED"/>
-                <action android:name="android.intent.action.QUICKBOOT_POWERON"/>
-                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED"/>
-            </intent-filter>
-        </receiver>
-
-        <!-- flutter_local_notifications: notification action button handler -->
-        <receiver
-            android:exported="false"
-            android:name="com.dexterous.flutterlocalnotifications.ActionBroadcastReceiver"/>
 
         <meta-data
             android:name="flutterEmbedding"

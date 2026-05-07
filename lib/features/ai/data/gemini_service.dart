@@ -1,86 +1,115 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:skripsi_manager/core/secrets.dart';
 import 'package:skripsi_manager/features/ai/data/ai_persona.dart';
 import 'package:skripsi_manager/features/ai/data/openrouter_service.dart';
 
-// ignore: constant_identifier_names
-const String GEMINI_API_KEY = "AIzaSyD3vFDAsB9DFGv7v7cjPaXuGEXQprGJPYk";
+// ── Sentinels ─────────────────────────────────────────────────────────────────
+const _kQuotaExceeded = '__QUOTA_EXCEEDED__';
+const _kKeyInvalid    = '__KEY_INVALID__';
+const _kKeyDisabled   = '__KEY_DISABLED__';
+const _kBaseUrl =
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=';
+
+// ── Service ───────────────────────────────────────────────────────────────────
 
 class GeminiService {
-  final String _endpoint =
-      'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$GEMINI_API_KEY';
-
   static bool _isRequestActive = false;
 
-  // Shared OpenRouter instance — lazy, used only on fallback
   final _openRouter = OpenRouterService();
 
+  // ── Chunk helper ─────────────────────────────────────────────────────────────
+
   List<String> chunkText(String text) {
-    List<String> chunks = [];
-    int chunkSize = 900;
+    const chunkSize = 900;
+    final chunks = <String>[];
     for (int i = 0; i < text.length; i += chunkSize) {
-      chunks.add(text.substring(i, i + chunkSize > text.length ? text.length : i + chunkSize));
+      final end = (i + chunkSize > text.length) ? text.length : i + chunkSize;
+      chunks.add(text.substring(i, end));
     }
     return chunks;
   }
 
-  // ── Public API ─────────────────────────────────────────────────────────────
+  // ── Public API ────────────────────────────────────────────────────────────────
 
-  /// Preferred method for UI calls.
-  /// Tries Gemini first (with academic persona prefix);
-  /// if Gemini fails, falls back to OpenRouter FREE models (which use system message).
+  /// Tries all Gemini keys in order; on total failure falls back to OpenRouter FREE.
   /// Returns human-readable Indonesian string on all error paths.
   Future<String> sendPromptWithFallback(String userPrompt) async {
-    // Gemini does not support dedicated system messages —
-    // inject persona as a prefix in the user content.
     final geminiPrompt = '${AiPersona.geminiPrefix}$userPrompt';
-    final geminiResult = await sendPrompt(geminiPrompt);
+    final geminiResult = await _sendWithKeyRotation(geminiPrompt);
 
-    if (_geminiSucceeded(geminiResult)) return geminiResult;
+    if (_isSuccess(geminiResult)) return geminiResult;
 
-    // Gemini failed — escalate to OpenRouter FREE tier.
-    // OpenRouter receives the raw userPrompt; persona is injected via system message inside OpenRouterService.
-    debugPrint('[GeminiService] Gemini failed, escalating to OpenRouter...');
+    debugPrint('[GeminiService] All keys failed ($geminiResult) → OpenRouter...');
     return _openRouter.sendPrompt(userPrompt);
   }
 
-  /// Detects whether the Gemini response is a success (not an error sentinel).
-  bool _geminiSucceeded(String result) {
-    if (result.isEmpty) return false;
-    const errorPrefixes = [
-      'Error',
-      'Limit harian',
-      'Terlalu banyak',
-      'Server AI sedang sibuk',
-      'Koneksi gagal',
-    ];
-    for (final prefix in errorPrefixes) {
-      if (result.startsWith(prefix)) return false;
+  /// Legacy method — kept for compatibility. Calls key rotation internally.
+  Future<String> sendPrompt(String text) async {
+    return _sendWithKeyRotation(text);
+  }
+
+  // ── Key rotation ──────────────────────────────────────────────────────────────
+
+  /// Try each key in kGeminiApiKeys. Returns content or human-readable error.
+  Future<String> _sendWithKeyRotation(String text) async {
+    final keys = kGeminiApiKeys;
+    if (keys.isEmpty) {
+      return 'Error: Tidak ada Gemini API key yang terkonfigurasi.';
     }
-    // Also catch raw JSON error bodies that slipped through
-    if (result.startsWith('{') && result.contains('"error"')) return false;
+
+    for (int i = 0; i < keys.length; i++) {
+      debugPrint('[Gemini] Mencoba key ${i + 1}/${keys.length}');
+      final result = await _callWithKey(keys[i], text);
+
+      if (_isFailover(result)) {
+        debugPrint('[Gemini] Key ${i + 1} habis/invalid → coba key berikutnya');
+        continue;
+      }
+      return result; // success or non-failover error
+    }
+
+    return 'Limit harian semua Gemini API key telah habis.';
+  }
+
+  bool _isFailover(String r) =>
+      r == _kQuotaExceeded || r == _kKeyInvalid || r == _kKeyDisabled;
+
+  bool _isSuccess(String r) {
+    if (r.isEmpty) return false;
+    const bad = [
+      'Error', 'Limit harian', 'Terlalu banyak',
+      'Server AI sedang sibuk', 'Koneksi gagal',
+    ];
+    for (final b in bad) {
+      if (r.startsWith(b)) return false;
+    }
+    if (r.startsWith('{') && r.contains('"error"')) return false;
     return true;
   }
 
-  // ── Core Gemini call ───────────────────────────────────────────────────────
+  // ── Single-key HTTP call ──────────────────────────────────────────────────────
 
-  Future<String> sendPrompt(String text) async {
+  Future<String> _callWithKey(String apiKey, String text) async {
+    // Queue requests — avoid concurrent Gemini calls
     while (_isRequestActive) {
       await Future.delayed(const Duration(milliseconds: 500));
     }
     _isRequestActive = true;
 
-    int retryCount = 0;
-    String finalResult = 'Error';
+    int retries = 0;
+    String result = 'Error';
 
     try {
-      while (retryCount <= 3) {
+      final uri = Uri.parse('$_kBaseUrl$apiKey');
+
+      while (retries <= 2) {
         await Future.delayed(const Duration(milliseconds: 800));
 
         try {
-          final response = await http.post(
-            Uri.parse(_endpoint),
+          final res = await http.post(
+            uri,
             headers: {'Content-Type': 'application/json'},
             body: jsonEncode({
               'contents': [
@@ -91,51 +120,69 @@ class GeminiService {
                 }
               ]
             }),
-          ).timeout(const Duration(seconds: 15));
+          ).timeout(const Duration(seconds: 20));
 
-          debugPrint('[Gemini] HTTP ${response.statusCode}');
+          debugPrint('[Gemini] HTTP ${res.statusCode}');
 
-          if (response.statusCode == 200) {
-            final data = jsonDecode(response.body);
+          if (res.statusCode == 200) {
+            final data = jsonDecode(res.body);
             final answer =
                 data['candidates']?[0]?['content']?['parts']?[0]?['text'];
             if (answer != null && (answer as String).trim().isNotEmpty) {
-              finalResult = answer.trim();
-              break;
+              result = answer.trim();
+            } else {
+              result = 'Error: AI tidak memberikan jawaban.';
             }
-            finalResult = 'Error: No text returned.';
             break;
-          } else if (response.statusCode == 429) {
-            final lowerBody = response.body.toLowerCase();
-            if (lowerBody.contains('quota') ||
-                lowerBody.contains('limit') ||
-                lowerBody.contains('exceeded') ||
-                lowerBody.contains('daily')) {
-              finalResult = 'Limit harian Gemini telah habis.';
+
+          } else if (res.statusCode == 429) {
+            final body = res.body.toLowerCase();
+            if (body.contains('quota') ||
+                body.contains('exceeded') ||
+                body.contains('daily') ||
+                body.contains('limit')) {
+              // Key quota exhausted → try next key
+              result = _kQuotaExceeded;
               break;
             }
-            retryCount++;
-            if (retryCount > 3) {
-              finalResult = 'Terlalu banyak permintaan ke Gemini.';
+            // Transient rate limit → retry
+            retries++;
+            if (retries > 2) {
+              result = 'Terlalu banyak permintaan ke Gemini.';
               break;
             }
             await Future.delayed(const Duration(seconds: 4));
-          } else if (response.statusCode == 503) {
-            retryCount++;
-            if (retryCount > 3) {
-              finalResult = 'Server AI sedang sibuk. Silakan coba lagi.';
+
+          } else if (res.statusCode == 400) {
+            final body = res.body.toLowerCase();
+            if (body.contains('api_key') || body.contains('invalid')) {
+              result = _kKeyInvalid;
+            } else {
+              result = 'Error: Permintaan tidak valid ke Gemini.';
+            }
+            break;
+
+          } else if (res.statusCode == 403) {
+            result = _kKeyDisabled;
+            break;
+
+          } else if (res.statusCode == 503 || res.statusCode == 502) {
+            retries++;
+            if (retries > 2) {
+              result = 'Server AI sedang sibuk. Silakan coba lagi.';
               break;
             }
             await Future.delayed(const Duration(seconds: 3));
+
           } else {
-            debugPrint('[Gemini] Error body: ${response.body}');
-            finalResult = 'Error: Gemini mengembalikan status ${response.statusCode}.';
+            debugPrint('[Gemini] Status ${res.statusCode}');
+            result = 'Error: Gemini mengembalikan status ${res.statusCode}.';
             break;
           }
-        } catch (e) {
-          retryCount++;
-          if (retryCount > 3) {
-            finalResult = 'Koneksi gagal atau timeout.';
+        } catch (_) {
+          retries++;
+          if (retries > 2) {
+            result = 'Koneksi gagal atau timeout saat menghubungi AI.';
             break;
           }
           await Future.delayed(const Duration(seconds: 3));
@@ -145,6 +192,6 @@ class GeminiService {
       _isRequestActive = false;
     }
 
-    return finalResult;
+    return result;
   }
 }

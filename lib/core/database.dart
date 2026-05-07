@@ -13,7 +13,7 @@ class AppDatabase {
     final path = join(await getDatabasesPath(), 'skripsi_manager.db');
     return openDatabase(
       path,
-      version: 3,
+      version: 5,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -46,7 +46,13 @@ class AppDatabase {
         path TEXT NOT NULL,
         chapter_id INTEGER,
         type TEXT,
-        category TEXT DEFAULT 'Referensi'
+        category TEXT DEFAULT 'Referensi',
+        authors TEXT,
+        year TEXT,
+        tags TEXT,
+        notes TEXT,
+        is_favorite INTEGER DEFAULT 0,
+        last_opened INTEGER
       )
     ''');
 
@@ -70,6 +76,9 @@ class AppDatabase {
 
     // AI chat history — persists AI answers and follow-up Q&A per journal item
     await _createAiChatTable(db);
+
+    // Analysis history — saved academic analysis and comparisons
+    await _createAnalysisHistoryTable(db);
 
     // Default PIN
     await db.insert('settings', {'key': 'pin', 'value': '123123'});
@@ -97,6 +106,17 @@ class AppDatabase {
     if (oldVersion < 3) {
       await db.execute('ALTER TABLE files ADD COLUMN category TEXT DEFAULT \'Referensi\'');
     }
+    if (oldVersion < 4) {
+      await _createAnalysisHistoryTable(db);
+    }
+    if (oldVersion < 5) {
+      await db.execute('ALTER TABLE files ADD COLUMN authors TEXT');
+      await db.execute('ALTER TABLE files ADD COLUMN year TEXT');
+      await db.execute('ALTER TABLE files ADD COLUMN tags TEXT');
+      await db.execute('ALTER TABLE files ADD COLUMN notes TEXT');
+      await db.execute('ALTER TABLE files ADD COLUMN is_favorite INTEGER DEFAULT 0');
+      await db.execute('ALTER TABLE files ADD COLUMN last_opened INTEGER');
+    }
   }
 
   static Future<void> _createAiChatTable(Database db) async {
@@ -113,6 +133,18 @@ class AppDatabase {
     await db.execute(
       'CREATE INDEX IF NOT EXISTS idx_ai_chat_item ON ai_chat_history(item_key)',
     );
+  }
+
+  static Future<void> _createAnalysisHistoryTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS analysis_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        type TEXT NOT NULL,
+        content TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      )
+    ''');
   }
 }
 

@@ -56,6 +56,7 @@ class SearchController {
       _cachedDoc != null && _cachedDoc!.paragraphs.isNotEmpty;
   int get totalLines => _cachedDoc?.paragraphs.length ?? 0;
   int get totalJournals => _cachedJournals?.length ?? 0;
+  List<String> get references => _cachedDoc?.references ?? [];
 
   /// Returns the first part of the document text for full analysis.
   String get documentText {

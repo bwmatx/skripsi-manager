@@ -4,7 +4,7 @@ import 'package:skripsi_manager/core/theme.dart';
 import 'package:skripsi_manager/features/account/data/account_repository.dart';
 import 'package:skripsi_manager/features/account/domain/account_model.dart';
 import 'package:skripsi_manager/features/auth/presentation/change_pin_page.dart';
-import 'package:skripsi_manager/features/notifications/data/notification_service.dart';
+
 
 final accountProvider = FutureProvider<AccountModel>((ref) {
   return AccountRepository().getAccount();
@@ -55,47 +55,7 @@ class _AccountBody extends StatefulWidget {
 }
 
 class _AccountBodyState extends State<_AccountBody> {
-  int _reminderHour = 9;
-  int _reminderMinute = 0;
-  bool _reminderEnabled = true;
 
-  Future<void> _pickTime() async {
-    final picked = await showTimePicker(
-      context: context,
-      initialTime: TimeOfDay(hour: _reminderHour, minute: _reminderMinute),
-    );
-    if (picked == null) return;
-    setState(() {
-      _reminderHour = picked.hour;
-      _reminderMinute = picked.minute;
-    });
-    if (_reminderEnabled) {
-      await NotificationService.scheduleDailyReminder(
-        hour: _reminderHour,
-        minute: _reminderMinute,
-      );
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Pengingat dijadwalkan pukul ${picked.format(context)}',
-          ),
-        ),
-      );
-    }
-  }
-
-  Future<void> _toggleReminder(bool val) async {
-    setState(() => _reminderEnabled = val);
-    if (val) {
-      await NotificationService.scheduleDailyReminder(
-        hour: _reminderHour,
-        minute: _reminderMinute,
-      );
-    } else {
-      await NotificationService.cancelAll();
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -205,79 +165,6 @@ class _AccountBodyState extends State<_AccountBody> {
               : '-',
         ),
         const SizedBox(height: 24),
-
-        // ─── Reminder Section ───────────────────────────────────────────
-        const Padding(
-          padding: EdgeInsets.only(bottom: 10),
-          child: Text(
-            'PENGINGAT',
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.8,
-              color: AppTheme.textSecondary,
-            ),
-          ),
-        ),
-        Container(
-          decoration: BoxDecoration(
-            color: AppTheme.card,
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Column(
-            children: [
-              ListTile(
-                leading: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: AppTheme.primary.withAlpha(30),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const Icon(
-                    Icons.alarm_rounded,
-                    color: AppTheme.primary,
-                  ),
-                ),
-                title: const Text(
-                  'Pengingat Harian',
-                  style: TextStyle(
-                    color: AppTheme.textPrimary,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                subtitle: Text(
-                  'Setiap hari pukul ${_reminderHour.toString().padLeft(2, '0')}:${_reminderMinute.toString().padLeft(2, '0')}',
-                  style: const TextStyle(
-                    color: AppTheme.textSecondary,
-                    fontSize: 13,
-                  ),
-                ),
-                trailing: Switch(
-                  value: _reminderEnabled,
-                  onChanged: _toggleReminder,
-                  activeTrackColor: AppTheme.primary.withAlpha(100),
-                  activeThumbColor: AppTheme.primary,
-                ),
-              ),
-              const Divider(height: 1),
-              ListTile(
-                leading: const Icon(
-                  Icons.schedule_rounded,
-                  color: AppTheme.textSecondary,
-                ),
-                title: const Text(
-                  'Atur Waktu Pengingat',
-                  style: TextStyle(color: AppTheme.textSecondary, fontSize: 14),
-                ),
-                trailing: const Icon(
-                  Icons.chevron_right_rounded,
-                  color: AppTheme.textSecondary,
-                ),
-                onTap: _pickTime,
-              ),
-            ],
-          ),
-        ),
         const SizedBox(height: 24),
 
         // Change PIN

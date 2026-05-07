@@ -30,6 +30,39 @@ class FilesRepository {
     await db.update('files', {'category': category}, where: 'id = ?', whereArgs: [id]);
   }
 
+  Future<void> updateMetadata(int id, {
+    String? authors,
+    String? year,
+    String? tags,
+    String? notes,
+  }) async {
+    final db = await AppDatabase.instance;
+    final Map<String, dynamic> data = {};
+    if (authors != null) data['authors'] = authors;
+    if (year != null) data['year'] = year;
+    if (tags != null) data['tags'] = tags;
+    if (notes != null) data['notes'] = notes;
+    
+    if (data.isEmpty) return;
+
+    await db.update(
+      'files',
+      data,
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  Future<void> toggleFavorite(int id, bool isFavorite) async {
+    final db = await AppDatabase.instance;
+    await db.update('files', {'is_favorite': isFavorite ? 1 : 0}, where: 'id = ?', whereArgs: [id]);
+  }
+
+  Future<void> markAsOpened(int id) async {
+    final db = await AppDatabase.instance;
+    await db.update('files', {'last_opened': DateTime.now().millisecondsSinceEpoch}, where: 'id = ?', whereArgs: [id]);
+  }
+
   String _detectType(String name) {
     final ext = name.split('.').last.toLowerCase();
     if (['pdf'].contains(ext)) return 'pdf';

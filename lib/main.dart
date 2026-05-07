@@ -6,7 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:skripsi_manager/core/theme.dart';
 import 'package:skripsi_manager/core/database.dart';
 import 'package:skripsi_manager/features/auth/presentation/pin_login_page.dart';
-import 'package:skripsi_manager/features/notifications/data/notification_service.dart';
+
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -36,14 +36,6 @@ void main() async {
       debugPrint('[DB] Init failed: $e');
     }
   }));
-
-  // Init NotificationService — must complete before UI is interactive
-  // so timezone and channels are ready when user opens Pengingat page.
-  try {
-    await NotificationService.init();
-  } catch (e) {
-    debugPrint('[Notif] Init failed: $e');
-  }
 
   runApp(const ProviderScope(child: SkripsiApp()));
 }
