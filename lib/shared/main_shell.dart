@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:skripsi_manager/features/progress/presentation/progress_page.dart';
 import 'package:skripsi_manager/features/files/presentation/files_page.dart';
 import 'package:skripsi_manager/features/ai/presentation/ai_page.dart';
@@ -20,10 +21,30 @@ class MainShell extends ConsumerWidget {
     AccountPage(),
   ];
 
-  static const _items = [
+  List<BottomNavigationBarItem> get _items => [
     BottomNavigationBarItem(icon: Icon(Icons.checklist_rounded), label: 'Progress'),
     BottomNavigationBarItem(icon: Icon(Icons.folder_rounded), label: 'Files'),
-    BottomNavigationBarItem(icon: Icon(Icons.smart_toy_rounded), label: 'AI'),
+    BottomNavigationBarItem(
+      icon: Padding(
+        padding: EdgeInsets.only(bottom: 4),
+        child: SvgPicture.asset(
+          'assets/icon/beauty.svg',
+          width: 20,
+          height: 20,
+          colorFilter: const ColorFilter.mode(AppTheme.textSecondary, BlendMode.srcIn),
+        ),
+      ),
+      activeIcon: Padding(
+        padding: EdgeInsets.only(bottom: 4),
+        child: SvgPicture.asset(
+          'assets/icon/beauty.svg',
+          width: 20,
+          height: 20,
+          colorFilter: const ColorFilter.mode(AppTheme.primary, BlendMode.srcIn),
+        ),
+      ),
+      label: 'Arum',
+    ),
     BottomNavigationBarItem(icon: Icon(Icons.compare_arrows_rounded), label: 'Compare'),
     BottomNavigationBarItem(icon: Icon(Icons.person_rounded), label: 'Akun'),
   ];

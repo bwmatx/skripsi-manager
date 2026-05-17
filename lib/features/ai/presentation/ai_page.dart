@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_svg/flutter_svg.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:skripsi_manager/core/arum.dart';
 import 'package:skripsi_manager/core/theme.dart';
 import 'package:skripsi_manager/features/ai/data/ai_chat_repository.dart';
 import 'package:skripsi_manager/features/ai/data/search_controller.dart' as ai;
 import 'package:skripsi_manager/features/ai/domain/journal_model.dart';
-import 'package:skripsi_manager/features/ai/data/gemini_service.dart';
+import 'package:skripsi_manager/features/ai/data/ai_provider_manager.dart';
 import 'package:skripsi_manager/features/files/data/files_repository.dart';
 import 'package:skripsi_manager/features/files/domain/file_item.dart';
 import 'package:skripsi_manager/features/files/presentation/files_page.dart';
@@ -54,11 +57,12 @@ class _AiPageState extends State<AiPage> {
         if (_selectedFile != null) _loadFile(_selectedFile!);
       }
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         setState(() {
           _loading = false;
           _errorMsg = 'Gagal memuat daftar file: $e';
         });
+      }
     }
   }
 
@@ -98,7 +102,13 @@ class _AiPageState extends State<AiPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('AI Asisten Skripsi'),
+        title: const Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(Arum.name, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            Text(Arum.tagline, style: TextStyle(fontSize: 12, fontWeight: FontWeight.normal, color: Colors.white)),
+          ],
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.history_rounded),
@@ -405,7 +415,7 @@ class ResultCard extends StatefulWidget {
 }
 
 class _ResultCardState extends State<ResultCard> {
-  final _gemini = GeminiService();
+  final _aiManager = AiProviderManager();
   final _repo = AiChatRepository();
   final _followUpCtrl = TextEditingController();
 
@@ -445,78 +455,236 @@ class _ResultCardState extends State<ResultCard> {
   Future<void> _loadHistory() async {
     try {
       final msgs = await _repo.getMessages(_itemKey);
-      if (mounted)
+      if (mounted) {
         setState(() {
           _messages = msgs;
           _loadingHistory = false;
         });
+      }
     } catch (_) {
       if (mounted) setState(() => _loadingHistory = false);
     }
   }
 
-  /// Initial "Tanyakan ke AI" — first message in this conversation.
+  /// Show bottom sheet, then call AI only after user submits their question.
   Future<void> _askAi() async {
     if (_sendingMsg) return;
+
+    // Default question tailored to the card type
+    final defaultQuestion = _isFullDoc
+        ? 'Buatkan analisis komprehensif jurnal ini secara terstruktur (ringkasan, keyword, metodologi, kesimpulan, kontribusi).'
+        : _isBodyPara
+        ? 'Analisis isi paragraf ini dan jelaskan poin akademis pentingnya.'
+        : _isStructure
+        ? 'Analisis bagian ${widget.item.title.replaceAll("Struktur: ", "")} ini dan jelaskan kontribusinya.'
+        : 'Analisis kutipan jurnal ini dan jelaskan maknanya secara akademis.';
+
+    // Context snippet sent alongside user question for grounding
+    final chunks = _aiManager.chunkText(widget.item.text);
+    final contextSnippet = chunks.take(2).join(' ');
+
+    final question = await _showAskDialog(
+      hint: Arum.askHint,
+      defaultText: defaultQuestion,
+    );
+    if (question == null || question.trim().isEmpty) return;
+
     setState(() => _sendingMsg = true);
 
-    final chunks = _gemini.chunkText(widget.item.text);
-    final textToSend = chunks.take(2).join(' ');
+    // Build academic prompt = context + user question
+    final fullPrompt =
+        'Konteks teks jurnal:\n"$contextSnippet"\n\nPertanyaan: ${question.trim()}';
 
-    // Persona diinjeksi otomatis oleh GeminiService/OpenRouterService.
-    // Di sini cukup kirim konteks akademik yang relevan.
-    final prompt = _isFullDoc
-        ? 'Sebagai dosen pembimbing akademik, buatkan analisis komprehensif untuk jurnal ini secara terstruktur. '
-              'Sertakan poin-poin berikut:\n'
-              '1. Ringkasan singkat jurnal\n'
-              '2. Keyword / Kata kunci utama\n'
-              '3. Metodologi penelitian yang digunakan\n'
-              '4. Kesimpulan jurnal\n'
-              '5. Highlight poin penting / kontribusi penelitian\n\n'
-              'Teks dokumen:\n"$textToSend"'
-        : _isBodyPara
-        ? 'Sebagai dosen pembimbing akademik, analisis isi paragraf berikut dari bagian '
-              '"${widget.item.title.replaceFirst("Paragraf: ", "")}". '
-              'Jelaskan:\n'
-              '1. Apa yang dibahas paragraf ini\n'
-              '2. Poin akademis penting di dalamnya\n'
-              '3. Relevansinya dalam konteks penelitian\n\n'
-              'Paragraf:\n"$textToSend"'
-        : _isStructure
-        ? 'Sebagai dosen pembimbing akademik, analisis bagian ${widget.item.title.replaceAll("Struktur: ", "")} ini. '
-              'Jelaskan poin pentingnya, apa yang dibahas di dalamnya, dan bagaimana bagian ini berkontribusi pada jurnal secara keseluruhan:\n\n'
-              '"$textToSend"'
-        : 'Analisis kutipan jurnal ilmiah berikut dan jelaskan maknanya '
-              'secara akademis, termasuk relevansinya untuk penelitian:\n\n'
-              '"$textToSend"';
+    // Save user message first
+    final userMsg = AiChatMessage(
+      itemKey: _itemKey,
+      role: 'user',
+      content: question.trim(),
+      createdAt: DateTime.now(),
+    );
+    final userId = await _repo.addMessage(userMsg);
 
-    final response = await _gemini.sendPromptWithFallback(prompt);
+    if (mounted) {
+      setState(() {
+        _messages = [
+          AiChatMessage(
+            id: userId,
+            itemKey: userMsg.itemKey,
+            role: 'user',
+            content: userMsg.content,
+            createdAt: userMsg.createdAt,
+          ),
+        ];
+      });
+    }
+
+    // Call AI
+    final response = await _aiManager.sendPromptWithFallback(fullPrompt);
 
     if (!mounted) return;
 
-    // Persist first assistant message
-    final msg = AiChatMessage(
+    // Save AI response
+    final aiMsg = AiChatMessage(
       itemKey: _itemKey,
       role: 'assistant',
       content: response,
       createdAt: DateTime.now(),
     );
-    final id = await _repo.addMessage(msg);
+    final aiId = await _repo.addMessage(aiMsg);
+
     setState(() {
       _messages = [
+        ..._messages,
         AiChatMessage(
-          id: id,
-          itemKey: msg.itemKey,
-          role: msg.role,
-          content: msg.content,
-          createdAt: msg.createdAt,
+          id: aiId,
+          itemKey: aiMsg.itemKey,
+          role: 'assistant',
+          content: response,
+          createdAt: aiMsg.createdAt,
         ),
       ];
       _sendingMsg = false;
     });
   }
 
-  /// Follow-up question from user.
+  /// Bottom sheet for user to type their question before AI is called.
+  Future<String?> _showAskDialog({
+    required String hint,
+    String? defaultText,
+  }) {
+    final ctrl = TextEditingController(text: defaultText ?? '');
+    return showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppTheme.card,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return Padding(
+          padding: EdgeInsets.only(
+            left: 20,
+            right: 20,
+            top: 20,
+            bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Handle bar
+              Center(
+                child: Container(
+                  width: 36,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: AppTheme.divider,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const Text(
+                Arum.askButton,
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: AppTheme.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                widget.item.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: AppTheme.textSecondary,
+                ),
+              ),
+              const SizedBox(height: 14),
+              TextField(
+                controller: ctrl,
+                autofocus: true,
+                maxLines: 5,
+                minLines: 3,
+                style: const TextStyle(
+                  fontSize: 14,
+                  color: AppTheme.textPrimary,
+                ),
+                decoration: InputDecoration(
+                  hintText: hint,
+                  hintStyle: const TextStyle(
+                    color: AppTheme.textSecondary,
+                    fontSize: 14,
+                  ),
+                  filled: true,
+                  fillColor: AppTheme.background,
+                  contentPadding: const EdgeInsets.all(14),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: AppTheme.divider),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: AppTheme.divider),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(
+                      color: AppTheme.primary,
+                      width: 1.5,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        side: const BorderSide(color: AppTheme.divider),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      child: const Text(
+                        'Batal',
+                        style: TextStyle(color: AppTheme.textSecondary),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    flex: 2,
+                    child: ElevatedButton.icon(
+                      onPressed: () {
+                        final txt = ctrl.text.trim();
+                        if (txt.isNotEmpty) Navigator.pop(ctx, txt);
+                      },
+                      icon: const Icon(Icons.send_rounded, size: 16),
+                      label: const Text('Kirim'),
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  /// Follow-up question from user — uses full structured chat history.
   Future<void> _sendFollowUp() async {
     final question = _followUpCtrl.text.trim();
     if (question.isEmpty || _sendingMsg) return;
@@ -524,7 +692,7 @@ class _ResultCardState extends State<ResultCard> {
     _followUpCtrl.clear();
     setState(() => _sendingMsg = true);
 
-    // Save user message
+    // Save user message immediately so it appears in chat
     final userMsg = AiChatMessage(
       itemKey: _itemKey,
       role: 'user',
@@ -533,19 +701,10 @@ class _ResultCardState extends State<ResultCard> {
     );
     final userId = await _repo.addMessage(userMsg);
 
-    // Bangun konteks percakapan untuk follow-up
-    final contextBuf = StringBuffer();
-    contextBuf.writeln('Kutipan jurnal yang sedang dibahas:');
-    contextBuf.writeln('"${widget.item.text}"\n');
-    contextBuf.writeln('Riwayat diskusi:');
-    for (final m in _messages) {
-      final roleLabel = m.role == 'user' ? 'Mahasiswa' : 'Dosen Pembimbing';
-      contextBuf.writeln('$roleLabel: ${m.content}');
-    }
-    contextBuf.writeln('\nMahasiswa: $question');
-    contextBuf.writeln(
-      '\nBerikan jawaban sebagai dosen pembimbing akademik yang solutif dan profesional.',
-    );
+    // Build prior history as structured list (exclude the new message)
+    final priorHistory = _messages.map((m) {
+      return {'role': m.role, 'content': m.content};
+    }).toList();
 
     if (mounted) {
       setState(() {
@@ -562,8 +721,16 @@ class _ResultCardState extends State<ResultCard> {
       });
     }
 
-    final response = await _gemini.sendPromptWithFallback(
-      contextBuf.toString(),
+    // Include journal context in the new user message
+    final chunks = _aiManager.chunkText(widget.item.text);
+    final contextSnippet = chunks.take(1).join(' ');
+    final enrichedQuestion = priorHistory.isEmpty
+        ? 'Konteks: "$contextSnippet"\n\nPertanyaan: $question'
+        : question;
+
+    final response = await _aiManager.sendWithHistory(
+      chatHistory: priorHistory,
+      newUserPrompt: enrichedQuestion,
     );
 
     if (!mounted) return;
@@ -589,6 +756,46 @@ class _ResultCardState extends State<ResultCard> {
       ];
       _sendingMsg = false;
     });
+  }
+
+  /// Save full conversation thread to analysis history.
+  Future<void> _saveFullConversation() async {
+    if (_messages.isEmpty) return;
+    try {
+      final buf = StringBuffer();
+      for (final m in _messages) {
+        final label = m.role == 'user' ? Arum.userLabel : Arum.roleLabel;
+        buf.writeln('[$label]');
+        buf.writeln(m.content);
+        buf.writeln();
+      }
+      final repo = AnalysisHistoryRepository();
+      await repo.insert(
+        AnalysisHistory(
+          title: widget.item.title,
+          type: _isFullDoc
+              ? 'Analisis Akademik'
+              : (_isStructure ? 'Analisis Bagian' : 'Penjelasan Kutipan'),
+          content: buf.toString().trim(),
+          createdAt: DateTime.now(),
+        ),
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(Arum.savedMessage),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Gagal menyimpan: $e'),
+          backgroundColor: AppTheme.error,
+        ),
+      );
+    }
   }
 
   Future<void> _deleteHistory() async {
@@ -893,45 +1100,23 @@ class _ResultCardState extends State<ResultCard> {
                   _IconActionBtn(
                     icon: Icons.save_rounded,
                     label: 'Simpan',
-                    onTap: () async {
-                      final firstAi = _messages.firstWhere(
-                        (m) => m.role == 'assistant',
-                        orElse: () => _messages.first,
-                      );
-                      final repo = AnalysisHistoryRepository();
-                      await repo.insert(
-                        AnalysisHistory(
-                          title: widget.item.title,
-                          type: _isFullDoc
-                              ? 'Analisis Akademik'
-                              : (_isStructure
-                                    ? 'Analisis Bagian'
-                                    : 'Penjelasan Kutipan'),
-                          content: firstAi.content,
-                          createdAt: DateTime.now(),
-                        ),
-                      );
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Analisis tersimpan ke riwayat.'),
-                          ),
-                        );
-                      }
-                    },
+                    onTap: _saveFullConversation,
                   ),
                   const SizedBox(width: 8),
                   _IconActionBtn(
                     icon: Icons.copy_rounded,
                     label: 'Salin',
-                    onTap: () {
-                      final firstAi = _messages.firstWhere(
+                    onTap: () async {
+                      final aiMessages = _messages.where(
                         (m) => m.role == 'assistant',
-                        orElse: () => _messages.first,
                       );
-                      Clipboard.setData(ClipboardData(text: firstAi.content));
+                      final text = aiMessages.isNotEmpty
+                          ? aiMessages.map((m) => m.content).join('\n\n---\n\n')
+                          : _messages.map((m) => m.content).join('\n\n');
+                      await Clipboard.setData(ClipboardData(text: text));
+                      if (!context.mounted) return;
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Jawaban disalin.')),
+                        const SnackBar(content: Text(Arum.copiedMessage)),
                       );
                     },
                   ),
@@ -960,7 +1145,7 @@ class _ResultCardState extends State<ResultCard> {
                     LinearProgressIndicator(),
                     SizedBox(height: 6),
                     Text(
-                      'AI sedang memproses...',
+                      Arum.processingLabel,
                       style: TextStyle(
                         fontSize: 12,
                         color: AppTheme.textSecondary,
@@ -973,8 +1158,13 @@ class _ResultCardState extends State<ResultCard> {
             else
               ElevatedButton.icon(
                 onPressed: _askAi,
-                icon: const Icon(Icons.auto_awesome, size: 16),
-                label: const Text('Tanyakan ke AI'),
+                icon: SvgPicture.asset(
+                  'assets/icon/beauty.svg',
+                  width: 16,
+                  height: 16,
+                  colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
+                ),
+                label: const Text(Arum.askButton),
                 style: ElevatedButton.styleFrom(
                   minimumSize: const Size(double.infinity, 44),
                 ),
@@ -1016,14 +1206,15 @@ class _ChatThread extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     if (isAi) ...[
-                      const Icon(
-                        Icons.auto_awesome,
-                        size: 12,
-                        color: AppTheme.primary,
+                      SvgPicture.asset(
+                        'assets/icon/beauty.svg',
+                        width: 12,
+                        height: 12,
+                        colorFilter: const ColorFilter.mode(AppTheme.primary, BlendMode.srcIn),
                       ),
                       const SizedBox(width: 4),
                       const Text(
-                        'AI',
+                        Arum.roleLabel,
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w700,
@@ -1032,7 +1223,7 @@ class _ChatThread extends StatelessWidget {
                       ),
                     ] else
                       const Text(
-                        'Kamu',
+                        Arum.userLabel,
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
@@ -1063,14 +1254,34 @@ class _ChatThread extends StatelessWidget {
                     width: 1,
                   ),
                 ),
-                child: Text(
-                  m.content,
-                  style: TextStyle(
-                    fontSize: 13,
-                    height: 1.55,
-                    color: isAi ? AppTheme.textPrimary : AppTheme.textSecondary,
-                  ),
-                ),
+                child: isAi
+                    ? MarkdownBody(
+                        data: Arum.clean(m.content),
+                        selectable: true,
+                        styleSheet: MarkdownStyleSheet(
+                          p: const TextStyle(
+                            fontSize: 13,
+                            height: 1.55,
+                            color: AppTheme.textPrimary,
+                          ),
+                          listBullet: const TextStyle(
+                            color: AppTheme.primary,
+                            fontSize: 13,
+                          ),
+                          h1: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppTheme.primary),
+                          h2: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppTheme.primary),
+                          h3: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                          strong: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                      )
+                    : SelectableText(
+                        m.content,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          height: 1.55,
+                          color: AppTheme.textSecondary,
+                        ),
+                      ),
               ),
             ],
           ),
@@ -1111,7 +1322,7 @@ class _FollowUpInput extends StatelessWidget {
               maxLines: null,
               style: const TextStyle(fontSize: 13),
               decoration: const InputDecoration(
-                hintText: 'Tanya lanjutan...',
+                hintText: Arum.followUpHint,
                 border: InputBorder.none,
                 isDense: true,
                 contentPadding: EdgeInsets.symmetric(vertical: 6),
@@ -1140,11 +1351,14 @@ class _FollowUpInput extends StatelessWidget {
 
 // ─── Small icon action button ─────────────────────────────────────────────────
 
+/// Supports both sync and async callbacks.
+typedef _AsyncTap = Future<void> Function();
+
 class _IconActionBtn extends StatelessWidget {
   final IconData icon;
   final String label;
   final Color color;
-  final VoidCallback onTap;
+  final _AsyncTap onTap;
 
   const _IconActionBtn({
     required this.icon,

@@ -3,6 +3,9 @@ import 'package:flutter/services.dart';
 import 'package:skripsi_manager/core/theme.dart';
 import 'package:skripsi_manager/features/ai/data/gemini_service.dart';
 import 'package:skripsi_manager/features/history/data/analysis_history_repository.dart';
+import 'package:flutter_svg/flutter_svg.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:skripsi_manager/core/arum.dart';
 
 class ReferencePage extends StatefulWidget {
   final List<String> references;
@@ -123,7 +126,12 @@ class _ReferencePageState extends State<ReferencePage> {
                                   height: 14,
                                   child: CircularProgressIndicator(strokeWidth: 2),
                                 )
-                              : const Icon(Icons.auto_awesome, size: 16),
+                              : SvgPicture.asset(
+                                  'assets/icon/beauty.svg',
+                                  width: 16,
+                                  height: 16,
+                                  colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
+                                ),
                           label: const Text('Rapikan Format'),
                           style: ElevatedButton.styleFrom(
                             padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -137,12 +145,23 @@ class _ReferencePageState extends State<ReferencePage> {
                   child: showFormatted
                       ? SingleChildScrollView(
                           padding: const EdgeInsets.all(16),
-                          child: Text(
-                            _formattedText!,
-                            style: const TextStyle(
-                              fontSize: 14,
-                              height: 1.6,
-                              color: AppTheme.textPrimary,
+                          child: MarkdownBody(
+                            data: Arum.clean(_formattedText!),
+                            selectable: true,
+                            styleSheet: MarkdownStyleSheet(
+                              p: const TextStyle(
+                                fontSize: 14,
+                                height: 1.6,
+                                color: AppTheme.textPrimary,
+                              ),
+                              listBullet: const TextStyle(
+                                color: AppTheme.primary,
+                                fontSize: 14,
+                              ),
+                              h1: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppTheme.primary),
+                              h2: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppTheme.primary),
+                              h3: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                              strong: const TextStyle(fontWeight: FontWeight.w700),
                             ),
                           ),
                         )

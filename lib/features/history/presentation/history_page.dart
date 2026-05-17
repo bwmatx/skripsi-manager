@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:skripsi_manager/core/arum.dart';
 import 'package:skripsi_manager/core/export_helper.dart';
 import 'package:skripsi_manager/core/theme.dart';
 import 'package:skripsi_manager/features/history/data/analysis_history_repository.dart';
@@ -13,7 +15,7 @@ class HistoryPage extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Riwayat Analisis'),
+        title: const Text(Arum.historyTitle),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh_rounded),
@@ -126,7 +128,10 @@ class _HistoryCard extends ConsumerWidget {
               ),
               const SizedBox(height: 6),
               Text(
-                item.content,
+                // Buang format markdown kasar untuk preview list
+                Arum.clean(item.content)
+                    .replaceAll(RegExp(r'[*#\[\]]'), '')
+                    .replaceAll('\n', ' '),
                 style: const TextStyle(
                   fontSize: 13,
                   color: AppTheme.textSecondary,
@@ -292,12 +297,23 @@ class _HistoryDetailPageState extends ConsumerState<HistoryDetailPage> {
                   const SizedBox(height: 24),
                   const Divider(),
                   const SizedBox(height: 16),
-                  Text(
-                    widget.item.content,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      height: 1.6,
-                      color: AppTheme.textPrimary,
+                  MarkdownBody(
+                    data: Arum.clean(widget.item.content),
+                    selectable: true,
+                    styleSheet: MarkdownStyleSheet(
+                      p: const TextStyle(
+                        fontSize: 14,
+                        height: 1.6,
+                        color: AppTheme.textPrimary,
+                      ),
+                      listBullet: const TextStyle(
+                        color: AppTheme.primary,
+                        fontSize: 14,
+                      ),
+                      h1: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppTheme.primary),
+                      h2: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppTheme.primary),
+                      h3: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                      strong: const TextStyle(fontWeight: FontWeight.w700),
                     ),
                   ),
                   const SizedBox(height: 32),

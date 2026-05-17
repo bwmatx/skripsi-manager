@@ -4,6 +4,7 @@ import 'package:skripsi_manager/core/theme.dart';
 import 'package:skripsi_manager/features/auth/data/auth_repository.dart';
 import 'package:skripsi_manager/shared/main_shell.dart';
 import 'package:skripsi_manager/features/auth/presentation/change_pin_page.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 class PinLoginPage extends StatefulWidget {
   const PinLoginPage({super.key});
@@ -17,6 +18,24 @@ class _PinLoginPageState extends State<PinLoginPage> {
   String _entered = '';
   bool _error = false;
   bool _loading = false;
+  String _versionStr = 'version 1.0.0 stable release';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadVersion();
+  }
+
+  Future<void> _loadVersion() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      if (mounted) {
+        setState(() {
+          _versionStr = 'version ${info.version}+${info.buildNumber} stable release';
+        });
+      }
+    } catch (_) {}
+  }
 
   void _onKey(String digit) {
     if (_entered.length >= 6) return;
@@ -114,9 +133,9 @@ class _PinLoginPageState extends State<PinLoginPage> {
                 child: const Text('Lupa PIN?'),
               ),
               const Spacer(flex: 1),
-              const Text(
-                'App created by Adhi Wibowo\nversion 1.1.2 stable release',
-                style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+              Text(
+                'App created by Adhi Wibowo\n$_versionStr',
+                style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 16),

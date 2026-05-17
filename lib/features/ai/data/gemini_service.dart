@@ -76,6 +76,9 @@ class GeminiService {
   bool _isFailover(String r) =>
       r == _kQuotaExceeded || r == _kKeyInvalid || r == _kKeyDisabled;
 
+  /// Public version — used by AiProviderManager adapter.
+  bool isSuccess(String r) => _isSuccess(r);
+
   bool _isSuccess(String r) {
     if (r.isEmpty) return false;
     const bad = [
