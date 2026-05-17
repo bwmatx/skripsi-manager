@@ -1,124 +1,285 @@
 # Skripsi Manager
 
-Aplikasi manajemen skripsi offline-first berbasis Flutter untuk Android yang dirancang untuk membantu mahasiswa mengelola progress skripsi, menganalisis dokumen, dan mendeteksi plagiarisme dengan bantuan AI.
+Aplikasi manajemen skripsi berbasis Flutter dengan pendekatan offline-first untuk membantu mahasiswa mengelola progress skripsi, menganalisis dokumen, mendeteksi kemiripan tulisan, dan berdiskusi dengan AI secara lebih terorganisir.
 
 ## Fitur Utama
 
-### 1. **Manajemen Progress BAB Skripsi**
-- Kelola bab-bab skripsi (Bab 1–5) dengan checklist tugas
-- Hitung progress global berdasarkan tugas yang selesai
-- Tambah, edit, atau hapus bab dan tugas secara dinamis
-- Sistem streak harian untuk motivasi
+### Manajemen Progress Skripsi
 
-### 2. **Import & Manajemen File**
-- Unggah dan kelola file PDF/DOCX
-- Metadata lengkap: nama, penulis, tahun, tag, catatan
-- Kategorisasi: Jurnal, Skripsi, Referensi
-- Pencarian berdasarkan nama, penulis, atau tag
-- Filter berdasarkan tipe file dan kategori
-- Urutkan berdasarkan nama, tanggal, atau ukuran
-- Tandai favorit dan lacak file terakhir dibuka
-- Buka file langsung di aplikasi eksternal
+- Kelola BAB skripsi (Bab 1–5)
+- Checklist tugas per BAB
+- Progress global otomatis
+- Tambah, edit, dan hapus tugas
+- Sistem streak harian untuk menjaga konsistensi pengerjaan
 
-### 3. **AI Asisten via Gemini API**
-- Muat file PDF/DOCX untuk konteks
+---
+
+### Import & Manajemen Dokumen
+
+- Import file PDF dan DOCX
+- Metadata lengkap:
+  - nama file
+  - penulis
+  - tahun
+  - tag
+  - catatan
+- Kategori dokumen:
+  - Jurnal
+  - Skripsi
+  - Referensi
+- Search dan filter dokumen
+- Sorting berdasarkan nama, tanggal, dan ukuran
+- Favorite documents
+- Last opened tracking
+- Buka file langsung menggunakan aplikasi eksternal
+
+---
+
+### Arum — Teman Sharing Skripsimu
+
+Asisten AI terintegrasi untuk membantu proses penulisan dan analisis skripsi.
+
+#### Fitur AI
+
+- Chat AI berbasis konteks dokumen
+- Tanya jawab lanjutan dengan context memory
+- Riwayat percakapan persisten
+- Parsing PDF dan DOCX
 - Pencarian paragraf offline
-- Tanyakan pertanyaan tentang isi dokumen
-- Riwayat chat AI persisten per dokumen
-- Dukungan thread tanya-jawab lanjutan
-- Ekstraksi referensi dan format
-- Ekspor analisis ke riwayat
-- Fallback ke OpenRouter jika Gemini gagal
+- Analisis isi dokumen
+- Ekstraksi referensi
+- Formatting bantuan akademik
+- Markdown rendering yang lebih rapi
 
-### 4. **Mesin Perbandingan Kemiripan Dokumen (Plagiarisme)**
-- Bandingkan dua dokumen secara side-by-side
-- Deteksi kemiripan pada level paragraf
-- Hitung skor dan persentase kemiripan
-- Mode terjemahan: Normalisasi Bahasa Inggris ↔ Indonesia sebelum perbandingan
-- Pemrosesan di background (tidak freeze UI)
-- Cache dokumen untuk performa
-- Simpan hasil ke riwayat analisis
+#### AI Providers
 
-### 5. **Akun & Profil**
-- Profil pengguna: nama, tanggal lahir, judul skripsi
-- Sistem streak harian (pelacakan aktivitas)
-- Edit informasi profil
+1. Gemini 2.5 Flash
+2. DeepSeek V4 Flash
+3. OpenRouter (fallback)
 
-### 6. **Riwayat Analisis**
-- Lihat semua analisis dan perbandingan tersimpan
-- Ekspor ke TXT atau PDF
-- Judul, tipe, isi, timestamp
-- Refresh dan hapus entri riwayat
-- Ekspor ke folder Download (Android)
+#### Sistem Fallback Otomatis
 
-### 7. **Autentikasi PIN Lokal**
-- PIN 6-digit dengan keypad numerik
-- Validasi PIN lokal (SQLite)
-- Feedback haptic pada kesalahan
-- Ubah/reset PIN
-- Kontrol akses berbasis sesi
+Jika provider utama gagal:
 
-### 8. **Pengingat Harian Berbasis Notifikasi**
-- Notifikasi harian untuk motivasi
-- Pengaturan notifikasi di akun
+Gemini → DeepSeek → OpenRouter
 
-## Password Awal Masuk
-- **PIN Default:** `123123`
-- Ubah PIN melalui menu Akun setelah login pertama.
+---
 
-## Tech Stack
+### Mesin Perbandingan Kemiripan Dokumen
 
-- **Flutter** 3.x + Dart ^3.11.5
-- **Riverpod** 2.6.1 — state management
-- **SQLite (sqflite)** 2.4.1 — database lokal
-- **Google Gemini 2.5 Flash** + **OpenRouter** — AI services
-- **Google ML Kit** — terjemahan on-device (EN↔ID)
-- **Syncfusion PDF** — ekstraksi teks PDF
-- **Archive + XML** — parsing DOCX
-- **Flutter Secure Storage** — penyimpanan PIN aman
-- **File Picker, Path Provider, Open File** — manajemen file
-- **Connectivity Plus** — deteksi koneksi
-- **Flutter Local Notifications** — notifikasi
+Fitur analisis kemiripan tulisan berbasis paragraf.
 
-## Arsitektur Offline-First
-- Semua data disimpan di SQLite lokal
-- Pemrosesan file dan analisis berjalan offline
-- AI menggunakan API cloud dengan fallback
-- Terjemahan menggunakan model on-device ML Kit
-- Aplikasi berfungsi penuh tanpa internet
+#### Kemampuan
 
-## Setup & Instalasi
+- Perbandingan dua dokumen side-by-side
+- Deteksi kemiripan paragraf
+- Persentase similarity
+- Skor kemiripan
+- Highlight bagian serupa
+- Cache dokumen untuk performa lebih cepat
 
-1. **Persiapan:**
-   - Flutter 3.x SDK
-   - Dart ^3.11.5
-   - Android API 21+
+#### Mode Translasi
 
-2. **Konfigurasi API Keys:**
-   - Salin `lib/core/secrets.dart.example` ke `lib/core/secrets.dart`
-   - Isi dengan API key Gemini yang valid (rotasi jika perlu)
-   - Pastikan file `secrets.dart` tidak di-commit ke git
+Normalisasi Bahasa Indonesia ↔ Inggris sebelum proses perbandingan menggunakan Google ML Kit on-device.
 
-3. **Build & Run:**
-   ```bash
-   flutter pub get
-   flutter run
-   ```
+---
 
-4. **Data Awal:**
-   - 5 bab skripsi (Bab 1–5) dibuat otomatis
-   - Profil akun default dibuat
-   - PIN default: `123123`
+### Riwayat Analisis
 
-## Build Release
+- Simpan hasil analisis AI
+- Simpan riwayat percakapan penuh
+- Riwayat compare dokumen
+- Export TXT & PDF
+- Timestamp otomatis
+- Hapus dan refresh riwayat
+- Export ke folder Download Android
+
+---
+
+### Akun & Profil
+
+- Nama pengguna
+- Tanggal lahir
+- Judul skripsi
+- Tracking streak harian
+- Pengaturan AI
+- Pengaturan notifikasi
+
+---
+
+### Sistem Keamanan Lokal
+
+- Login PIN 6 digit
+- Validasi lokal menggunakan SQLite
+- Haptic feedback
+- Reset & ubah PIN
+- Session-based access
+
+---
+
+### Pengingat Harian
+
+- Notifikasi harian
+- Reminder pengerjaan skripsi
+- Pengaturan notifikasi di halaman akun
+
+---
+
+# Tech Stack
+
+| Technology | Usage |
+|---|---|
+| Flutter 3.x | Cross-platform framework |
+| Dart | Programming language |
+| Riverpod | State management |
+| SQLite (sqflite) | Local database |
+| Gemini API | AI provider |
+| DeepSeek API | AI provider |
+| OpenRouter | AI fallback provider |
+| Google ML Kit | On-device translation |
+| Syncfusion PDF | PDF text extraction |
+| Archive + XML | DOCX parsing |
+| Flutter Secure Storage | Secure local storage |
+| File Picker | File management |
+| Open File | Open external files |
+| Connectivity Plus | Network detection |
+| Flutter Local Notifications | Local notifications |
+
+---
+
+# Arsitektur Offline-First
+
+Skripsi Manager dirancang agar tetap dapat digunakan tanpa koneksi internet.
+
+## Offline Features
+
+- SQLite local storage
+- File parsing lokal
+- Document comparison offline
+- ML Kit translation on-device
+- Progress & history tersimpan lokal
+
+## Online Features
+
+- AI provider integration
+- Cloud AI processing
+
+---
+
+# Setup & Instalasi
+
+## 1. Requirements
+
+- Flutter 3.x
+- Dart SDK
+- Android SDK API 21+
+
+---
+
+## 2. Konfigurasi API Key
+
+Buat file berikut:
+
+```bash
+lib/core/secrets.dart
+```
+
+Lalu isi API key sesuai provider yang digunakan di dalam file tersebut.
+
+Contoh struktur dan lokasi pengisian sudah tersedia pada:
+
+```bash
+lib/core/secrets.dart.example
+```
+
+Pastikan:
+
+- `secrets.dart` masuk `.gitignore`
+- jangan commit API key ke repository publik
+
+---
+
+## 3. Install Dependency
+
 ```bash
 flutter pub get
+```
+
+---
+
+## 4. Jalankan Aplikasi
+
+```bash
+flutter run
+```
+
+---
+
+# Data Awal
+
+## Default PIN
+
+```text
+123123
+```
+
+Disarankan segera mengganti PIN setelah login pertama.
+
+---
+
+# Build Release APK
+
+## APK Standard
+
+```bash
 flutter build apk --release
 ```
 
-## Developer
-Adhi Wibowo — Version 1.2.0+3
+## APK Lebih Ringan
 
-## Catatan Keamanan
-- API keys Gemini dan OpenRouter terpapar di kode sumber. Gunakan template `secrets.dart.example` dan kecualikan dari git.
-- PIN disimpan di database lokal SQLite.
+```bash
+flutter build apk --release --split-per-abi
+```
+
+Output build:
+
+```text
+build/app/outputs/flutter-apk/
+```
+
+---
+
+# Optimasi yang Sudah Diterapkan
+
+- Offline-first architecture
+- Background processing
+- Async document analysis
+- AI fallback system
+- Cache optimization
+- Lightweight markdown rendering
+- Optimized history rendering
+- Reduced unnecessary rebuilds
+
+---
+
+# Developer
+
+Adhi Wibowo
+
+Version mengikuti `pubspec.yaml`
+
+---
+
+# Catatan Keamanan
+
+- Jangan commit file `secrets.dart`
+- Gunakan `.gitignore`
+- API key bersifat private
+- PIN disimpan secara lokal
+- Tidak ada cloud database untuk data pengguna
+
+---
+
+# Catatan
+
+Aplikasi ini masih terus dikembangkan untuk membantu mahasiswa mengelola skripsi dengan workflow yang lebih modern, ringan, dan terorganisir melalui pendekatan offline-first dan bantuan AI.
